@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Page {
+  id          String      @id @default(cuid())
+  slug        String      @unique
+  title       String
+  description String?
+  metaTitle   String?
+  metaDesc    String?
+  isPublished Boolean     @default(false)
+  blocks      PageBlock[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model PageBlock {
+  id        String    @id @default(cuid())
+  pageId    String
+  page      Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  type      BlockType
+  order     Int
+  content   Json
+  styles    Json      @default("{}")
+  isVisible Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+enum BlockType {
+  HEADING
+  TEXT
+  IMAGE
+  VIDEO
+  BUTTON
+  DIVIDER
+  EMBED
+  SPACER
+  COLUMNS
+}
+
+model Media {
+  id           String    @id @default(cuid())
+  filename     String    @unique
+  originalName String
+  url          String
+  type         MediaType
+  mimeType     String
+  size         Int
+  createdAt    DateTime  @default(now())
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+}
+
+model Client {
+  id                    String       @id @default(cuid())
+  name                  String
+  email                 String       @unique
+  phone                 String?
+  company               String?
+  status                ClientStatus @default(LEAD)
+  notes                 String?
+  password              String?
+  onboardingToken       String?      @unique
+  onboardingExpiresAt   DateTime?
+  onboardingCompletedAt DateTime?
+  passwordResetToken    String?      @unique
+  passwordResetExpiresAt DateTime?
+  projects              Project[]
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+}
+
+enum ClientStatus {
+  LEAD
+  ONBOARDING
+  ACTIVE
+  ON_HOLD
+  CHURNED
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  clientId    String
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  status      ProjectStatus @default(PLANNING)
+  progress    Int           @default(0)
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Float?
+  notes       String?
+  milestones  Milestone[]
+  updates     ProjectUpdate[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+  ON_HOLD
+  CANCELLED
+}
+
+model Milestone {
+  id          String          @id @default(cuid())
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      MilestoneStatus @default(PENDING)
+  order       Int
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model ProjectUpdate {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
