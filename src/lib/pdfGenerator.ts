@@ -23,11 +23,15 @@ export interface InvoicePdfData {
   lineItems:     InvoiceLineItem[];
 }
 
-// Ensures the invoices directory exists under uploads/
-const INVOICES_DIR = path.join(process.cwd(), 'uploads', 'invoices');
-if (!fs.existsSync(INVOICES_DIR)) {
-  fs.mkdirSync(INVOICES_DIR, { recursive: true });
-}
+// On Lambda (and similar read-only environments) process.cwd() points to
+// /var/task which is read-only. Only /tmp is writable at runtime.
+const isReadOnlyFs =
+  process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined ||
+  process.cwd().startsWith('/var/task');
+
+const INVOICES_DIR = isReadOnlyFs
+  ? '/tmp/uploads/invoices'
+  : path.join(process.cwd(), 'uploads', 'invoices');
 
 const formatCurrency = (amount: number, currency: string) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
@@ -48,6 +52,11 @@ const C = {
 
 export async function generateInvoicePdf(data: InvoicePdfData): Promise<string> {
   return new Promise((resolve, reject) => {
+    // Ensure directory exists at generation time, not at module load time
+    if (!fs.existsSync(INVOICES_DIR)) {
+      fs.mkdirSync(INVOICES_DIR, { recursive: true });
+    }
+
     const filename = `invoice-${data.invoiceNumber}.pdf`;
     const filePath = path.join(INVOICES_DIR, filename);
     const publicUrl = `/uploads/invoices/${filename}`;

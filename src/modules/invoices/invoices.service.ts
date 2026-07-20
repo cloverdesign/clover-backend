@@ -131,8 +131,14 @@ export const invoicesService = {
       data:  { status: 'SENT', pdfUrl },
     });
 
-    // Email client with PDF attachment
-    const pdfPath = path.join(process.cwd(), pdfUrl);
+    // Email client with PDF attachment.
+    // On Lambda, PDFs are written to /tmp (writable), not process.cwd() (read-only).
+    const isReadOnlyFs =
+      process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined ||
+      process.cwd().startsWith('/var/task');
+    const pdfPath = isReadOnlyFs
+      ? `/tmp${pdfUrl}`
+      : path.join(process.cwd(), pdfUrl);
     await mailer.sendInvoiceNotification(
       client.email,
       client.name,
