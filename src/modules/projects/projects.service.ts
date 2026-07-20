@@ -2,25 +2,21 @@ import { z } from 'zod';
 import prisma from '../../lib/prisma';
 
 export const createProjectSchema = z.object({
-  clientId: z.string().min(1, 'Client ID is required'),
-  name: z.string().min(1, 'Project name is required'),
-  description: z.string().optional(),
-  status: z
-    .enum([
-      'PLANNING',
-      'IN_PROGRESS',
-      'REVIEW',
-      'COMPLETED',
-      'ON_HOLD',
-      'CANCELLED',
-    ])
-    .optional()
-    .default('PLANNING'),
-  progress: z.number().int().min(0).max(100).optional().default(0),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
-  budget: z.number().positive().optional(),
-  notes: z.string().optional(),
+  clientId:       z.string().min(1, 'Client ID is required'),
+  name:           z.string().min(1, 'Project name is required'),
+  type:           z.string().optional(),
+  description:    z.string().optional(),
+  phase:          z.string().optional(),
+  status:         z.enum(['PLANNING', 'IN_PROGRESS', 'REVIEW', 'COMPLETED', 'ON_HOLD', 'CANCELLED']).optional().default('PLANNING'),
+  progress:       z.number().int().min(0).max(100).optional().default(0),
+  currency:       z.string().length(3).optional().default('USD'),
+  totalValue:     z.number().positive().optional(),
+  budget:         z.number().positive().optional(),
+  startDate:      z.string().datetime().optional(),
+  endDate:        z.string().datetime().optional(),
+  archived:       z.boolean().optional().default(false),
+  notes:          z.string().optional(),
+  parentProjectId: z.string().optional(),
 });
 
 export const updateProjectSchema = createProjectSchema.partial().omit({ clientId: true });
@@ -65,15 +61,21 @@ export const projectsService = {
 
     return prisma.project.create({
       data: {
-        clientId: data.clientId,
-        name: data.name,
-        description: data.description,
-        status: data.status,
-        progress: data.progress,
-        startDate: data.startDate ? new Date(data.startDate) : undefined,
-        endDate: data.endDate ? new Date(data.endDate) : undefined,
-        budget: data.budget,
-        notes: data.notes,
+        clientId:        data.clientId,
+        name:            data.name,
+        type:            data.type,
+        description:     data.description,
+        phase:           data.phase,
+        status:          data.status,
+        progress:        data.progress,
+        currency:        data.currency ?? 'USD',
+        totalValue:      data.totalValue,
+        budget:          data.budget,
+        startDate:       data.startDate ? new Date(data.startDate) : undefined,
+        endDate:         data.endDate ? new Date(data.endDate) : undefined,
+        archived:        data.archived ?? false,
+        notes:           data.notes,
+        parentProjectId: data.parentProjectId,
       },
       include: {
         client: {
@@ -90,8 +92,11 @@ export const projectsService = {
         client: {
           select: { id: true, name: true, email: true, company: true },
         },
-        milestones: { orderBy: { order: 'asc' } },
-        updates: { orderBy: { createdAt: 'desc' } },
+        milestones:   { orderBy: { order: 'asc' } },
+        updates:      { orderBy: { createdAt: 'desc' } },
+        invoices:     { orderBy: { createdAt: 'desc' } },
+        deliverables: { orderBy: { uploadedAt: 'desc' } },
+        revisions:    { select: { id: true, name: true, status: true, createdAt: true } },
       },
     });
 

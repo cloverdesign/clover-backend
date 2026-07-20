@@ -53,52 +53,64 @@ const jsonFormat = winston.format.combine(
 
 // ─── Transports ───────────────────────────────────────────────────────────────
 
-const LOGS_DIR = path.join(process.cwd(), 'logs');
-const isProd    = process.env.NODE_ENV === 'production';
-const isDev     = !isProd;
+const isProd = process.env.NODE_ENV === 'production';
+const isDev  = !isProd;
 
-const fileTransportDefaults = {
-  dirname:        LOGS_DIR,
-  datePattern:    'YYYY-MM-DD',
-  maxFiles:       '30d',   // retain 30 days of logs
-  maxSize:        '20m',   // rotate when a file hits 20 MB
-  zippedArchive:  true,
-  format:         jsonFormat,
-};
+// Detect serverless / read-only filesystem environments.
+// AWS Lambda runs from /var/task which is read-only; only /tmp is writable.
+// Skip file transports entirely in these environments — logs surface via the
+// platform's stdout collector (CloudWatch, Render, Railway, etc.).
+const isReadOnlyFs =
+  process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined ||
+  process.cwd().startsWith('/var/task');
 
-// All logs at the active level and above
-const combinedRotatingTransport = new DailyRotateFile({
-  ...fileTransportDefaults,
-  filename: '%DATE%-combined.log',
-  level:    'debug',
-});
+function buildFileTransports(): winston.transport[] {
+  if (isReadOnlyFs) return [];
 
-// Error-only file — fast path for on-call triage
-const errorRotatingTransport = new DailyRotateFile({
-  ...fileTransportDefaults,
-  filename: '%DATE%-error.log',
-  level:    'error',
-});
+  const LOGS_DIR = path.join(process.cwd(), 'logs');
 
-combinedRotatingTransport.on('rotate', (oldFile, newFile) => {
-  logger.info('Log file rotated', { oldFile, newFile });
-});
+  const defaults = {
+    dirname:       LOGS_DIR,
+    datePattern:   'YYYY-MM-DD',
+    maxFiles:      '30d',
+    maxSize:       '20m',
+    zippedArchive: true,
+    format:        jsonFormat,
+  };
+
+  const combined = new DailyRotateFile({
+    ...defaults,
+    filename: '%DATE%-combined.log',
+    level:    'debug',
+  });
+
+  const errors = new DailyRotateFile({
+    ...defaults,
+    filename: '%DATE%-error.log',
+    level:    'error',
+  });
+
+  combined.on('rotate', (oldFile, newFile) => {
+    logger.info('Log file rotated', { oldFile, newFile });
+  });
+
+  return [combined, errors];
+}
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
 
 export const logger = winston.createLogger({
-  // In production only log warn and above to console; debug/info go to files
-  level:       isProd ? 'warn' : 'debug',
+  // In serverless environments all levels reach the console so nothing is lost.
+  // In production with file transports, only warnings/errors go to console.
+  level:       'debug',
   levels,
   exitOnError: false,
   transports: [
     new winston.transports.Console({
       format: isDev ? devConsoleFormat : jsonFormat,
-      // In production, only warnings and errors reach the console
-      level:  isProd ? 'warn' : 'debug',
+      level:  (isProd && !isReadOnlyFs) ? 'warn' : 'debug',
     }),
-    combinedRotatingTransport,
-    errorRotatingTransport,
+    ...buildFileTransports(),
   ],
 });
 

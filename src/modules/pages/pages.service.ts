@@ -1,5 +1,11 @@
 import { z } from 'zod';
+import https from 'https';
+import http from 'http';
 import prisma from '../../lib/prisma';
+import { env } from '../../config/env';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('pages');
 
 export const createPageSchema = z.object({
   slug: z
@@ -104,7 +110,14 @@ export const pagesService = {
       if (existing) throw new Error('A page with this slug already exists');
     }
 
-    return prisma.page.update({ where: { id }, data });
+    const updated = await prisma.page.update({ where: { id }, data });
+
+    // Trigger Vercel rebuild when a page is published
+    if (data.isPublished === true && !page.isPublished) {
+      pagesService.triggerVercelDeploy().catch(() => {/* non-blocking */});
+    }
+
+    return updated;
   },
 
   async deletePage(id: string) {
@@ -175,6 +188,35 @@ export const pagesService = {
       include: {
         blocks: { orderBy: { order: 'asc' } },
       },
+    });
+  },
+
+  // Fire-and-forget Vercel deploy hook
+  async triggerVercelDeploy(): Promise<void> {
+    const hookUrl = env.VERCEL_DEPLOY_HOOK_URL;
+    if (!hookUrl) {
+      log.debug('VERCEL_DEPLOY_HOOK_URL not set — skipping deploy trigger');
+      return;
+    }
+
+    return new Promise((resolve, reject) => {
+      const url    = new URL(hookUrl);
+      const client = url.protocol === 'https:' ? https : http;
+
+      const req = client.request(
+        { hostname: url.hostname, path: url.pathname + url.search, method: 'POST' },
+        (res) => {
+          log.info('Vercel deploy hook triggered', { status: res.statusCode });
+          resolve();
+        },
+      );
+
+      req.on('error', (err) => {
+        log.error('Failed to trigger Vercel deploy hook', { error: err.message });
+        reject(err);
+      });
+
+      req.end();
     });
   },
 };

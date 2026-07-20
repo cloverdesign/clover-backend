@@ -1,124 +1,87 @@
 import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import prisma from '../../lib/prisma';
 import { env } from '../../config/env';
-import { signClientToken } from '../../middleware/auth';
+import { mailer } from '../../lib/mailer';
+import { createClientSession } from '../../middleware/auth';
+
+// ─── Schemas ──────────────────────────────────────────────────────────────────
 
 export const createClientSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  email: z.string().email('Invalid email address'),
-  phone: z.string().optional(),
+  name:    z.string().min(1, 'Name is required'),
+  email:   z.string().email('Invalid email address'),
+  phone:   z.string().optional(),
   company: z.string().optional(),
-  notes: z.string().optional(),
-  status: z
-    .enum(['LEAD', 'ONBOARDING', 'ACTIVE', 'ON_HOLD', 'CHURNED'])
-    .optional()
-    .default('LEAD'),
+  notes:   z.string().optional(),
+  status:  z.enum(['LEAD', 'ONBOARDING', 'ACTIVE', 'ON_HOLD', 'CHURNED']).optional().default('LEAD'),
 });
 
 export const updateClientSchema = createClientSchema.partial();
 
-export const completeOnboardingSchema = z.object({
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  phone: z.string().optional(),
-  company: z.string().optional(),
-});
-
-export const portalLoginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(1, 'Password is required'),
-});
-
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Current password is required'),
-  newPassword: z.string().min(8, 'New password must be at least 8 characters'),
-  confirmPassword: z.string().min(1, 'Confirm password is required'),
-}).refine((d) => d.newPassword === d.confirmPassword, {
-  message: 'Passwords do not match',
-  path: ['confirmPassword'],
-});
-
-export const forgotPasswordSchema = z.object({
+export const requestOtpSchema = z.object({
   email: z.string().email('Invalid email address'),
 });
 
-export const resetPasswordSchema = z.object({
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+export const verifyOtpSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  code:  z.string().length(6, 'Code must be 6 digits'),
 });
 
 export const updateProfileSchema = z.object({
-  name: z.string().min(1, 'Name is required').optional(),
-  phone: z.string().optional(),
+  name:    z.string().min(1).optional(),
+  phone:   z.string().optional(),
   company: z.string().optional(),
-  email: z.string().email('Invalid email address').optional(),
+  email:   z.string().email().optional(),
 });
 
+// ─── Safe client select (never expose sensitive fields) ───────────────────────
+
+const safeClientSelect = {
+  id:        true,
+  name:      true,
+  email:     true,
+  phone:     true,
+  company:   true,
+  status:    true,
+  notes:     true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+// ─── Service ──────────────────────────────────────────────────────────────────
+
 export const clientsService = {
+
+  // ── Admin: Client CRUD ──────────────────────────────────────────────────────
+
   async listClients() {
     return prisma.client.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        company: true,
-        status: true,
-        notes: true,
-        onboardingCompletedAt: true,
-        createdAt: true,
-        updatedAt: true,
+        ...safeClientSelect,
         _count: { select: { projects: true } },
       },
     });
   },
 
   async createClient(data: z.infer<typeof createClientSchema>) {
-    const existing = await prisma.client.findUnique({
-      where: { email: data.email },
-    });
+    const existing = await prisma.client.findUnique({ where: { email: data.email } });
     if (existing) throw new Error('A client with this email already exists');
 
-    return prisma.client.create({
-      data,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        company: true,
-        status: true,
-        notes: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    return prisma.client.create({ data, select: safeClientSelect });
   },
 
   async getClientById(id: string) {
     const client = await prisma.client.findUnique({
-      where: { id },
+      where:  { id },
       select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        company: true,
-        status: true,
-        notes: true,
-        onboardingCompletedAt: true,
-        createdAt: true,
-        updatedAt: true,
+        ...safeClientSelect,
         projects: {
           orderBy: { createdAt: 'desc' },
-          include: {
-            _count: { select: { milestones: true, updates: true } },
-          },
+          include: { _count: { select: { milestones: true, updates: true } } },
         },
       },
     });
-
     if (!client) throw new Error('Client not found');
     return client;
   },
@@ -128,28 +91,11 @@ export const clientsService = {
     if (!client) throw new Error('Client not found');
 
     if (data.email && data.email !== client.email) {
-      const existing = await prisma.client.findUnique({
-        where: { email: data.email },
-      });
+      const existing = await prisma.client.findUnique({ where: { email: data.email } });
       if (existing) throw new Error('A client with this email already exists');
     }
 
-    return prisma.client.update({
-      where: { id },
-      data,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        company: true,
-        status: true,
-        notes: true,
-        onboardingCompletedAt: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    return prisma.client.update({ where: { id }, data, select: safeClientSelect });
   },
 
   async deleteClient(id: string) {
@@ -158,158 +104,76 @@ export const clientsService = {
     await prisma.client.delete({ where: { id } });
   },
 
-  async sendOnboarding(id: string) {
-    const client = await prisma.client.findUnique({ where: { id } });
+  // ── Passwordless Auth ───────────────────────────────────────────────────────
+
+  async requestOtp(email: string) {
+    const client = await prisma.client.findUnique({ where: { email } });
+
+    // Always respond the same way — don't expose whether the email exists
+    if (!client) {
+      return { message: 'If that email is registered, a code has been sent' };
+    }
+
+    // Invalidate any existing unused codes for this email
+    await prisma.otpCode.updateMany({
+      where: { clientEmail: email, used: false },
+      data:  { used: true },
+    });
+
+    const code      = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await prisma.otpCode.create({ data: { clientEmail: email, code, expiresAt } });
+
+    await mailer.sendOtp(email, client.name, code);
+
+    return { message: 'If that email is registered, a code has been sent' };
+  },
+
+  async verifyOtp(email: string, code: string) {
+    const otpRecord = await prisma.otpCode.findFirst({
+      where: {
+        clientEmail: email,
+        code,
+        used:        false,
+        expiresAt:   { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!otpRecord) throw new Error('Invalid or expired code');
+
+    // Mark OTP used
+    await prisma.otpCode.update({ where: { id: otpRecord.id }, data: { used: true } });
+
+    const client = await prisma.client.findUnique({
+      where:  { email },
+      select: { ...safeClientSelect, status: true },
+    });
     if (!client) throw new Error('Client not found');
 
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    // Activate client on first login if still in LEAD/ONBOARDING
+    if (client.status === 'LEAD' || client.status === 'ONBOARDING') {
+      await prisma.client.update({ where: { email }, data: { status: 'ACTIVE' } });
+    }
 
-    await prisma.client.update({
-      where: { id },
-      data: {
-        onboardingToken: token,
-        onboardingExpiresAt: expiresAt,
-        status: 'ONBOARDING',
-      },
-    });
-
-    const onboardingUrl = `${env.BASE_URL}/onboarding/${token}`;
-    return { onboardingUrl, token, expiresAt };
+    const sessionToken = await createClientSession(client.id);
+    return { token: sessionToken, client };
   },
 
-  // Onboarding (public)
-  async getOnboardingInfo(token: string) {
-    const client = await prisma.client.findUnique({
-      where: { onboardingToken: token },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        company: true,
-        onboardingExpiresAt: true,
-        onboardingCompletedAt: true,
-      },
-    });
-
-    if (!client) throw new Error('Invalid onboarding link');
-    if (client.onboardingCompletedAt) {
-      throw new Error('Onboarding has already been completed');
-    }
-    if (client.onboardingExpiresAt && client.onboardingExpiresAt < new Date()) {
-      throw new Error('Onboarding link has expired');
-    }
-
-    return client;
+  async logout(sessionId: string) {
+    await prisma.authSession.delete({ where: { id: sessionId } });
   },
 
-  async completeOnboarding(
-    token: string,
-    data: z.infer<typeof completeOnboardingSchema>
-  ) {
-    const client = await prisma.client.findUnique({
-      where: { onboardingToken: token },
-    });
-
-    if (!client) throw new Error('Invalid onboarding link');
-    if (client.onboardingCompletedAt) {
-      throw new Error('Onboarding has already been completed');
-    }
-    if (client.onboardingExpiresAt && client.onboardingExpiresAt < new Date()) {
-      throw new Error('Onboarding link has expired');
-    }
-
-    const hashed = await bcrypt.hash(data.password, 12);
-
-    const updated = await prisma.client.update({
-      where: { id: client.id },
-      data: {
-        password: hashed,
-        phone: data.phone ?? client.phone,
-        company: data.company ?? client.company,
-        onboardingToken: null,
-        onboardingExpiresAt: null,
-        onboardingCompletedAt: new Date(),
-        status: 'ACTIVE',
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        company: true,
-        status: true,
-        createdAt: true,
-      },
-    });
-
-    const jwtToken = signClientToken(updated.id);
-    return { token: jwtToken, client: updated };
-  },
-
-  // Portal
-  async portalLogin(email: string, password: string) {
-    const client = await prisma.client.findUnique({ where: { email } });
-    if (!client || !client.password) {
-      throw new Error('Invalid email or password');
-    }
-
-    const isValid = await bcrypt.compare(password, client.password);
-    if (!isValid) throw new Error('Invalid email or password');
-
-    const token = signClientToken(client.id);
-    const { password: _pw, onboardingToken: _ot, ...safeClient } = client;
-
-    return { token, client: safeClient };
-  },
+  // ── Portal: Profile ─────────────────────────────────────────────────────────
 
   async getPortalMe(clientId: string) {
     const client = await prisma.client.findUnique({
-      where: { id: clientId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        company: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      where:  { id: clientId },
+      select: safeClientSelect,
     });
-
     if (!client) throw new Error('Client not found');
     return client;
-  },
-
-  async getPortalProjects(clientId: string) {
-    return prisma.project.findMany({
-      where: { clientId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        milestones: { orderBy: { order: 'asc' } },
-        updates: {
-          where: { isVisible: true },
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-    });
-  },
-
-  async getPortalProjectById(clientId: string, projectId: string) {
-    const project = await prisma.project.findFirst({
-      where: { id: projectId, clientId },
-      include: {
-        milestones: { orderBy: { order: 'asc' } },
-        updates: {
-          where: { isVisible: true },
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-    });
-
-    if (!project) throw new Error('Project not found');
-    return project;
   },
 
   async updateProfile(clientId: string, data: z.infer<typeof updateProfileSchema>) {
@@ -321,82 +185,61 @@ export const clientsService = {
       if (existing) throw new Error('A client with this email already exists');
     }
 
-    return prisma.client.update({
-      where: { id: clientId },
-      data,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        company: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
+    return prisma.client.update({ where: { id: clientId }, data, select: safeClientSelect });
+  },
+
+  // ── Portal: Projects ────────────────────────────────────────────────────────
+
+  async getPortalProjects(clientId: string) {
+    return prisma.project.findMany({
+      where:   { clientId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        milestones: { orderBy: { order: 'asc' } },
+        updates:    { where: { isVisible: true }, orderBy: { createdAt: 'desc' } },
+        invoices:   { where: { status: { not: 'DRAFT' } }, orderBy: { createdAt: 'desc' } },
+        _count:     { select: { deliverables: true } },
       },
     });
   },
 
-  async changePassword(
-    clientId: string,
-    data: z.infer<typeof changePasswordSchema>
-  ) {
+  async getPortalProjectById(clientId: string, projectId: string) {
+    const project = await prisma.project.findFirst({
+      where:   { id: projectId, clientId },
+      include: {
+        milestones:   { orderBy: { order: 'asc' } },
+        updates:      { where: { isVisible: true }, orderBy: { createdAt: 'desc' } },
+        invoices:     { where: { status: { not: 'DRAFT' } }, orderBy: { issuedDate: 'desc' } },
+        deliverables: {
+          where:   { status: 'READY' },
+          include: { reviews: { orderBy: { createdAt: 'desc' }, take: 1 } },
+          orderBy: { uploadedAt: 'desc' },
+        },
+        revisionRequests: {
+          where:   { clientId },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+    if (!project) throw new Error('Project not found');
+    return project;
+  },
+
+  // ── Admin: invite client to portal ─────────────────────────────────────────
+
+  async sendPortalInvite(clientId: string) {
     const client = await prisma.client.findUnique({ where: { id: clientId } });
-    if (!client || !client.password) throw new Error('Client not found');
+    if (!client) throw new Error('Client not found');
 
-    const isValid = await bcrypt.compare(data.currentPassword, client.password);
-    if (!isValid) throw new Error('Current password is incorrect');
+    const portalUrl = `${env.BASE_URL}/portal`;
 
-    if (data.currentPassword === data.newPassword) {
-      throw new Error('New password must be different from the current password');
-    }
-
-    const hashed = await bcrypt.hash(data.newPassword, 12);
+    await mailer.sendOtp(client.email, client.name, '——');
+    // We send the portal URL welcome email — the client will request an OTP from the portal
     await prisma.client.update({
       where: { id: clientId },
-      data: { password: hashed },
-    });
-  },
-
-  async forgotPassword(email: string) {
-    const client = await prisma.client.findUnique({ where: { email } });
-    // Always respond the same way to avoid email enumeration
-    if (!client || !client.onboardingCompletedAt) {
-      return { message: 'If that email exists, a reset link has been sent' };
-    }
-
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-    await prisma.client.update({
-      where: { id: client.id },
-      data: { passwordResetToken: token, passwordResetExpiresAt: expiresAt },
+      data:  { status: 'ACTIVE' },
     });
 
-    const resetUrl = `${env.BASE_URL}/portal/reset-password/${token}`;
-    // In production: send resetUrl via email
-    return { message: 'If that email exists, a reset link has been sent', resetUrl, token };
-  },
-
-  async resetPassword(token: string, newPassword: string) {
-    const client = await prisma.client.findUnique({
-      where: { passwordResetToken: token },
-    });
-
-    if (!client) throw new Error('Invalid or expired reset token');
-    if (!client.passwordResetExpiresAt || client.passwordResetExpiresAt < new Date()) {
-      throw new Error('Reset token has expired');
-    }
-
-    const hashed = await bcrypt.hash(newPassword, 12);
-
-    await prisma.client.update({
-      where: { id: client.id },
-      data: {
-        password: hashed,
-        passwordResetToken: null,
-        passwordResetExpiresAt: null,
-      },
-    });
+    return { portalUrl };
   },
 };

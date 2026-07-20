@@ -7,6 +7,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Admin ────────────────────────────────────────────────────────────────────
+
 model Admin {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -15,6 +17,8 @@ model Admin {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// ─── CMS ──────────────────────────────────────────────────────────────────────
 
 model Page {
   id          String      @id @default(cuid())
@@ -54,6 +58,8 @@ enum BlockType {
   COLUMNS
 }
 
+// ─── Media ────────────────────────────────────────────────────────────────────
+
 model Media {
   id           String    @id @default(cuid())
   filename     String    @unique
@@ -71,23 +77,41 @@ enum MediaType {
   DOCUMENT
 }
 
+// ─── Client Auth ──────────────────────────────────────────────────────────────
+
+model OtpCode {
+  id          String   @id @default(cuid())
+  clientEmail String
+  code        String
+  expiresAt   DateTime
+  used        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  token     String   @unique @default(cuid())
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+// ─── Clients ──────────────────────────────────────────────────────────────────
+
 model Client {
-  id                    String       @id @default(cuid())
-  name                  String
-  email                 String       @unique
-  phone                 String?
-  company               String?
-  status                ClientStatus @default(LEAD)
-  notes                 String?
-  password              String?
-  onboardingToken       String?      @unique
-  onboardingExpiresAt   DateTime?
-  onboardingCompletedAt DateTime?
-  passwordResetToken    String?      @unique
-  passwordResetExpiresAt DateTime?
-  projects              Project[]
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  id               String            @id @default(cuid())
+  name             String
+  email            String            @unique
+  phone            String?
+  company          String?
+  status           ClientStatus      @default(LEAD)
+  notes            String?
+  sessions         AuthSession[]
+  projects         Project[]
+  revisionRequests RevisionRequest[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 }
 
 enum ClientStatus {
@@ -98,22 +122,35 @@ enum ClientStatus {
   CHURNED
 }
 
+// ─── Projects ─────────────────────────────────────────────────────────────────
+
 model Project {
-  id          String        @id @default(cuid())
-  clientId    String
-  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  status      ProjectStatus @default(PLANNING)
-  progress    Int           @default(0)
-  startDate   DateTime?
-  endDate     DateTime?
-  budget      Float?
-  notes       String?
-  milestones  Milestone[]
-  updates     ProjectUpdate[]
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id               String            @id @default(cuid())
+  clientId         String
+  client           Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  parentProjectId  String?
+  parent           Project?          @relation("ProjectRevisions", fields: [parentProjectId], references: [id])
+  revisions        Project[]         @relation("ProjectRevisions")
+  name             String
+  type             String?
+  description      String?
+  phase            String?
+  status           ProjectStatus     @default(PLANNING)
+  progress         Int               @default(0)
+  currency         String            @default("USD")
+  totalValue       Float?
+  budget           Float?
+  startDate        DateTime?
+  endDate          DateTime?
+  archived         Boolean           @default(false)
+  notes            String?
+  milestones       Milestone[]
+  updates          ProjectUpdate[]
+  invoices         Invoice[]
+  deliverables     Deliverable[]
+  revisionRequests RevisionRequest[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 }
 
 enum ProjectStatus {
@@ -126,17 +163,18 @@ enum ProjectStatus {
 }
 
 model Milestone {
-  id          String          @id @default(cuid())
-  projectId   String
-  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  title       String
-  description String?
-  status      MilestoneStatus @default(PENDING)
-  order       Int
-  dueDate     DateTime?
-  completedAt DateTime?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id           String          @id @default(cuid())
+  projectId    String
+  project      Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  status       MilestoneStatus @default(PENDING)
+  order        Int
+  dueDate      DateTime?
+  completedAt  DateTime?
+  deliverables Deliverable[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 }
 
 enum MilestoneStatus {
@@ -153,4 +191,96 @@ model ProjectUpdate {
   content   String
   isVisible Boolean  @default(true)
   createdAt DateTime @default(now())
+}
+
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+
+model Invoice {
+  id            String        @id @default(cuid())
+  projectId     String
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  invoiceNumber String        @unique
+  amount        Float
+  currency      String        @default("USD")
+  lineItems     Json          @default("[]")
+  description   String?
+  status        InvoiceStatus @default(DRAFT)
+  issuedDate    DateTime      @default(now())
+  dueDate       DateTime
+  paidDate      DateTime?
+  pdfUrl        String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+}
+
+// ─── Deliverables ─────────────────────────────────────────────────────────────
+
+model Deliverable {
+  id           String              @id @default(cuid())
+  projectId    String
+  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestoneId  String?
+  milestone    Milestone?          @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  title        String
+  description  String?
+  version      Int                 @default(1)
+  fileUrl      String?
+  externalLink String?
+  status       DeliverableStatus   @default(READY)
+  reviews      DeliverableReview[]
+  uploadedAt   DateTime            @default(now())
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+}
+
+enum DeliverableStatus {
+  READY
+  SUPERSEDED
+}
+
+model DeliverableReview {
+  id            String       @id @default(cuid())
+  deliverableId String
+  deliverable   Deliverable  @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  status        ReviewStatus
+  comment       String?
+  reviewedAt    DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+}
+
+enum ReviewStatus {
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+// ─── Revision Requests ────────────────────────────────────────────────────────
+
+model RevisionRequest {
+  id                 String                @id @default(cuid())
+  projectId          String
+  project            Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clientId           String
+  client             Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  description        String
+  targetTimeframe    String?
+  attachments        Json                  @default("[]")
+  status             RevisionRequestStatus @default(REQUESTED)
+  resultingProjectId String?
+  resultingPhaseNote String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+}
+
+enum RevisionRequestStatus {
+  REQUESTED
+  IN_REVIEW
+  APPROVED
+  DECLINED
 }
