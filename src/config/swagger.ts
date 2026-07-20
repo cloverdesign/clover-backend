@@ -43,7 +43,9 @@ export const swaggerSpec: Schema = {
     ].join('\n'),
     contact: { name: 'Patrick Oguamanam', email: 'kachioguamanam@gmail.com' },
   },
-  servers: [{ url: 'http://localhost:3000', description: 'Local development' }],
+  servers: [
+    { url: process.env.BASE_URL || 'http://localhost:3000', description: process.env.NODE_ENV === 'production' ? 'Production' : 'Local development' },
+  ],
 
   tags: [
     { name: 'Health',             description: 'Server health check' },
