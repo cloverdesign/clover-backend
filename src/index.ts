@@ -53,11 +53,24 @@ app.use(httpLogger);
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // ─── Swagger Docs ─────────────────────────────────────────────────────────────
+// Use CDN-hosted assets so Swagger UI works on read-only/serverless filesystems
+// where node_modules/swagger-ui-dist may not be accessible at runtime.
+const SWAGGER_UI_VERSION = '5.18.2';
+const SWAGGER_CDN = `https://unpkg.com/swagger-ui-dist@${SWAGGER_UI_VERSION}`;
+
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customSiteTitle: 'Clover CMS API Docs',
   swaggerOptions:  { persistAuthorization: true },
+  customCssUrl:    `${SWAGGER_CDN}/swagger-ui.css`,
+  customJs:        [
+    `${SWAGGER_CDN}/swagger-ui-bundle.js`,
+    `${SWAGGER_CDN}/swagger-ui-standalone-preset.js`,
+  ],
 }));
 app.get('/docs.json', (_req, res) => res.json(swaggerSpec));
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+app.get('/', (_req, res) => res.redirect('/health'));
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
