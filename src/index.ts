@@ -12,6 +12,7 @@ import { errorHandler, notFound } from './middleware/errorHandler';
 
 // ── Core modules ──────────────────────────────────────────────────────────────
 import authRoutes    from './modules/auth/auth.routes';
+import adminsRoutes  from './modules/admins/admins.routes';
 import pagesRoutes   from './modules/pages/pages.routes';
 import mediaRoutes   from './modules/media/media.routes';
 import clientsRoutes from './modules/clients/clients.routes';
@@ -79,6 +80,7 @@ app.get('/health', (_req, res) => {
 
 // ─── Admin API ────────────────────────────────────────────────────────────────
 app.use('/api/auth',              authRoutes);
+app.use('/api/admins',            adminsRoutes);
 app.use('/api/pages',             pagesRoutes);
 app.use('/api/media',             mediaRoutes);
 app.use('/api/clients',           clientsRoutes);

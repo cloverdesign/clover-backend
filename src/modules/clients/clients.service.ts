@@ -233,12 +233,12 @@ export const clientsService = {
 
     const portalUrl = `${env.BASE_URL}/portal`;
 
-    await mailer.sendOtp(client.email, client.name, '——');
-    // We send the portal URL welcome email — the client will request an OTP from the portal
     await prisma.client.update({
       where: { id: clientId },
       data:  { status: 'ACTIVE' },
     });
+
+    await mailer.sendPortalInvite(client.email, client.name, portalUrl);
 
     return { portalUrl };
   },

@@ -74,7 +74,7 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<string> 
     // ── Header bar ────────────────────────────────────────────────────────────
     doc.rect(0, 0, pageWidth, 80).fill(C.black);
     doc.fontSize(22).fillColor(C.white).font('Helvetica-Bold')
-      .text(env.ZOHO_FROM_NAME, margin, 28);
+      .text(env.SENDGRID_FROM_NAME, margin, 28);
     doc.fontSize(10).font('Helvetica').fillColor('#aaaaaa')
       .text('INVOICE', pageWidth - margin - 80, 33, { width: 80, align: 'right' });
 
@@ -172,7 +172,7 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<string> 
 
     // ── Page footer ───────────────────────────────────────────────────────────
     doc.fontSize(9).fillColor(C.lightGray)
-      .text(env.ZOHO_FROM_NAME, margin, pageHeight - 40, { width: contentW, align: 'center' });
+      .text(env.SENDGRID_FROM_NAME, margin, pageHeight - 40, { width: contentW, align: 'center' });
 
     doc.end();
 

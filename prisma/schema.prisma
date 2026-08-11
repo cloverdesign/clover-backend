@@ -11,12 +11,24 @@ datasource db {
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 model Admin {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                      String    @id @default(cuid())
+  email                   String    @unique
+  password                String
+  name                    String
+  role                    AdminRole @default(ADMIN)
+  emailVerified           Boolean   @default(false)
+  approved                Boolean   @default(false)
+  verificationToken       String?   @unique
+  verificationTokenExpiry DateTime?
+  loginOtp                String?
+  loginOtpExpiry          DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
 }
 
 // ─── CMS ──────────────────────────────────────────────────────────────────────

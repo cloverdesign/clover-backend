@@ -7,8 +7,26 @@ import prisma from '../lib/prisma';
 
 // ─── Admin auth (JWT) ─────────────────────────────────────────────────────────
 
+export type AdminRole = 'SUPER_ADMIN' | 'ADMIN';
+
 export interface AdminAuthRequest extends Request {
-  admin?: { adminId: string; role: 'admin' };
+  admin?: { adminId: string; role: AdminRole };
+}
+
+function extractAdminToken(req: AdminAuthRequest, res: Response): { adminId: string; role: AdminRole } | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    sendError(res, 'Authorization token required', 401);
+    return null;
+  }
+  try {
+    const token   = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, env.JWT_SECRET) as { adminId: string; role: AdminRole };
+    return decoded;
+  } catch {
+    sendError(res, 'Invalid or expired token', 401);
+    return null;
+  }
 }
 
 export const requireAdmin = (
@@ -16,30 +34,37 @@ export const requireAdmin = (
   res: Response,
   next: NextFunction,
 ): void => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      sendError(res, 'Authorization token required', 401);
-      return;
-    }
+  const decoded = extractAdminToken(req, res);
+  if (!decoded) return;
 
-    const token   = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, env.JWT_SECRET) as { adminId: string; role: string };
-
-    if (decoded.role !== 'admin') {
-      sendError(res, 'Access denied: admin only', 403);
-      return;
-    }
-
-    req.admin = { adminId: decoded.adminId, role: 'admin' };
-    next();
-  } catch {
-    sendError(res, 'Invalid or expired token', 401);
+  if (decoded.role !== 'SUPER_ADMIN' && decoded.role !== 'ADMIN') {
+    sendError(res, 'Access denied', 403);
+    return;
   }
+
+  req.admin = { adminId: decoded.adminId, role: decoded.role };
+  next();
 };
 
-export const signAdminToken = (adminId: string): string =>
-  jwt.sign({ adminId, role: 'admin' }, env.JWT_SECRET, { expiresIn: '7d' });
+export const requireSuperAdmin = (
+  req: AdminAuthRequest,
+  res: Response,
+  next: NextFunction,
+): void => {
+  const decoded = extractAdminToken(req, res);
+  if (!decoded) return;
+
+  if (decoded.role !== 'SUPER_ADMIN') {
+    sendError(res, 'Access denied: super admin only', 403);
+    return;
+  }
+
+  req.admin = { adminId: decoded.adminId, role: 'SUPER_ADMIN' };
+  next();
+};
+
+export const signAdminToken = (adminId: string, role: AdminRole): string =>
+  jwt.sign({ adminId, role }, env.JWT_SECRET, { expiresIn: '7d' });
 
 // ─── Client auth (DB session) ─────────────────────────────────────────────────
 

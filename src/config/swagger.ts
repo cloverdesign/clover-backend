@@ -33,13 +33,21 @@ export const swaggerSpec: Schema = {
   openapi: '3.0.3',
   info: {
     title:   'Clover CMS API',
-    version: '2.0.0',
+    version: '3.0.0',
     description: [
       'REST API for the Clover agency platform.',
       '',
-      '**Two authentication schemes are in use:**',
-      '- **AdminBearer** — JWT issued by `POST /api/auth/login`. Pass in the `Authorization: Bearer <token>` header on all admin routes.',
-      '- **ClientBearer** — opaque session token issued by `POST /api/portal/verify-otp`. Pass in the `Authorization: Bearer <token>` header on all portal routes. Sessions last 30 days.',
+      '**Authentication schemes:**',
+      '',
+      '**AdminBearer** — JWT obtained after a two-step login:',
+      '1. `POST /api/auth/login` — validates password, emails a 6-digit OTP',
+      '2. `POST /api/auth/verify-otp` — validates OTP, returns a 7-day JWT',
+      '',
+      'New admin accounts must also verify their email before they can sign in (`POST /api/auth/register` → link in email → `GET /api/auth/verify-email?token=...`).',
+      '',
+      '**ClientBearer** — opaque 30-day session token issued by `POST /api/portal/verify-otp`. Stored in the database; logging out invalidates it immediately.',
+      '',
+      'Pass either token in the `Authorization: Bearer <token>` header.',
     ].join('\n'),
     contact: { name: 'Patrick Oguamanam', email: 'kachioguamanam@gmail.com' },
   },
@@ -50,6 +58,7 @@ export const swaggerSpec: Schema = {
   tags: [
     { name: 'Health',             description: 'Server health check' },
     { name: 'Admin Auth',         description: 'Admin login and session (JWT)' },
+    { name: 'Admin Management',   description: 'Admin user management — super admin only' },
     { name: 'Pages',              description: 'CMS page management — admin only' },
     { name: 'Content Blocks',     description: 'Page content blocks — admin only' },
     { name: 'Media',              description: 'Media library and file uploads — admin only' },
@@ -68,7 +77,7 @@ export const swaggerSpec: Schema = {
     securitySchemes: {
       AdminBearer: {
         type: 'http', scheme: 'bearer', bearerFormat: 'JWT',
-        description: 'Admin JWT — obtained from `POST /api/auth/login`. Valid for 7 days.',
+        description: 'Admin JWT — obtained after 2-step login (`POST /api/auth/login` → `POST /api/auth/verify-otp`). Valid for 7 days. The JWT encodes the admin\'s role (`ADMIN` or `SUPER_ADMIN`). Super-admin-only endpoints return 403 for regular admins.',
       },
       ClientBearer: {
         type: 'http', scheme: 'bearer', bearerFormat: 'opaque',
@@ -88,11 +97,14 @@ export const swaggerSpec: Schema = {
       Admin: {
         type: 'object',
         properties: {
-          id:        { type: 'string' },
-          name:      { type: 'string' },
-          email:     { type: 'string', format: 'email' },
-          createdAt: { type: 'string', format: 'date-time' },
-          updatedAt: { type: 'string', format: 'date-time' },
+          id:            { type: 'string' },
+          name:          { type: 'string' },
+          email:         { type: 'string', format: 'email' },
+          role:          { type: 'string', enum: ['SUPER_ADMIN', 'ADMIN'] },
+          emailVerified: { type: 'boolean', description: 'Must be true before the admin can sign in' },
+          approved:      { type: 'boolean', description: 'Must be true (set by super admin) before the admin can sign in' },
+          createdAt:     { type: 'string', format: 'date-time' },
+          updatedAt:     { type: 'string', format: 'date-time' },
         },
       },
 
@@ -331,7 +343,8 @@ export const swaggerSpec: Schema = {
     '/api/auth/register': {
       post: {
         tags: ['Admin Auth'],
-        summary: 'Register an admin account',
+        summary: 'Step 1 of registration — create account and send verification email',
+        description: 'Creates an unverified admin account and sends a 24-hour verification link to the provided email. The admin cannot sign in until the email is verified.',
         requestBody: {
           required: true,
           content: {
@@ -348,8 +361,55 @@ export const swaggerSpec: Schema = {
           },
         },
         responses: {
-          201: success({ $ref: '#/components/schemas/Admin' }),
+          201: success({
+            type: 'object',
+            properties: { message: { type: 'string', example: 'Account created. Please check your email to verify your account.' } },
+          }),
           409: err('Email already in use'),
+        },
+      },
+    },
+
+    '/api/auth/verify-email': {
+      get: {
+        tags: ['Admin Auth'],
+        summary: 'Step 2 of registration — verify email via link',
+        description: 'Called when the admin clicks the link in their verification email. Returns a JWT on success so the admin is immediately signed in.',
+        parameters: [{ name: 'token', in: 'query', required: true, schema: { type: 'string' }, description: '64-char hex token from the verification email' }],
+        responses: {
+          200: success({
+            type: 'object',
+            properties: {
+              token: { type: 'string', description: '7-day admin JWT' },
+              admin: { $ref: '#/components/schemas/Admin' },
+            },
+          }),
+          400: err('Invalid or expired verification link'),
+        },
+      },
+      post: {
+        tags: ['Admin Auth'],
+        summary: 'Step 2 of registration — verify email via body (programmatic clients)',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object', required: ['token'],
+                properties: { token: { type: 'string' } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: success({
+            type: 'object',
+            properties: {
+              token: { type: 'string', description: '7-day admin JWT' },
+              admin: { $ref: '#/components/schemas/Admin' },
+            },
+          }),
+          400: err('Invalid or expired verification link'),
         },
       },
     },
@@ -357,7 +417,8 @@ export const swaggerSpec: Schema = {
     '/api/auth/login': {
       post: {
         tags: ['Admin Auth'],
-        summary: 'Admin login — returns JWT',
+        summary: 'Step 1 of login — validate password and send OTP',
+        description: 'Validates the admin password. If correct, a 6-digit OTP is emailed (valid for 10 minutes). Submit the OTP to `POST /api/auth/verify-otp` to receive a JWT. The admin must have verified their email before they can sign in.',
         requestBody: {
           required: true,
           content: {
@@ -375,12 +436,41 @@ export const swaggerSpec: Schema = {
         responses: {
           200: success({
             type: 'object',
+            properties: { message: { type: 'string', example: 'A verification code has been sent to your email' } },
+          }),
+          401: err('Invalid credentials or email not verified'),
+        },
+      },
+    },
+
+    '/api/auth/verify-otp': {
+      post: {
+        tags: ['Admin Auth'],
+        summary: 'Step 2 of login — validate OTP and receive JWT',
+        description: 'Validates the 6-digit OTP that was emailed during `POST /api/auth/login`. Returns a 7-day JWT on success. The OTP is single-use.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object', required: ['email','otp'],
+                properties: {
+                  email: { type: 'string', format: 'email' },
+                  otp:   { type: 'string', minLength: 6, maxLength: 6, example: '382914' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: success({
+            type: 'object',
             properties: {
               token: { type: 'string', description: '7-day admin JWT' },
               admin: { $ref: '#/components/schemas/Admin' },
             },
           }),
-          401: err('Invalid credentials'),
+          401: err('Invalid or expired OTP'),
         },
       },
     },
@@ -393,6 +483,104 @@ export const swaggerSpec: Schema = {
         responses: {
           200: success({ $ref: '#/components/schemas/Admin' }),
           401: err('Unauthorized'),
+        },
+      },
+    },
+
+    // ── Admin Management ─────────────────────────────────────────────────────
+    '/api/admins': {
+      get: {
+        tags: ['Admin Management'],
+        summary: 'List all admin accounts',
+        description: 'Returns all admin accounts regardless of status. Super admin only.',
+        security: [adminAuth],
+        responses: {
+          200: success({ type: 'array', items: { $ref: '#/components/schemas/Admin' } }),
+          403: err('Super admin access required'),
+        },
+      },
+    },
+
+    '/api/admins/{id}': {
+      get: {
+        tags: ['Admin Management'],
+        summary: 'Get a single admin account',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: success({ $ref: '#/components/schemas/Admin' }),
+          404: err('Admin not found'),
+        },
+      },
+      delete: {
+        tags: ['Admin Management'],
+        summary: 'Delete an admin account',
+        description: 'Cannot delete your own account or another super admin.',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: success({ type: 'null' }),
+          400: err('Cannot delete your own account or a super admin'),
+          404: err('Admin not found'),
+        },
+      },
+    },
+
+    '/api/admins/{id}/approve': {
+      post: {
+        tags: ['Admin Management'],
+        summary: 'Approve a pending admin account',
+        description: 'Sets `approved: true`, allowing the admin to sign in. The admin is notified by email. Cannot approve your own account.',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: success({ $ref: '#/components/schemas/Admin' }),
+          400: err('Cannot approve your own account'),
+          404: err('Admin not found'),
+          409: err('Admin is already approved'),
+        },
+      },
+    },
+
+    '/api/admins/{id}/revoke': {
+      post: {
+        tags: ['Admin Management'],
+        summary: 'Revoke an admin\'s access',
+        description: 'Sets `approved: false`, preventing the admin from signing in. Cannot revoke your own account or a super admin.',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: success({ $ref: '#/components/schemas/Admin' }),
+          400: err('Cannot revoke your own account or a super admin'),
+          404: err('Admin not found'),
+        },
+      },
+    },
+
+    '/api/admins/{id}/role': {
+      put: {
+        tags: ['Admin Management'],
+        summary: 'Change an admin\'s role',
+        description: 'Promote to SUPER_ADMIN or demote to ADMIN. Cannot change your own role.',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object', required: ['role'],
+                properties: {
+                  role: { type: 'string', enum: ['SUPER_ADMIN', 'ADMIN'] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: success({ $ref: '#/components/schemas/Admin' }),
+          400: err('Cannot change your own role'),
+          404: err('Admin not found'),
         },
       },
     },
@@ -766,8 +954,8 @@ export const swaggerSpec: Schema = {
     '/api/clients/{id}/send-portal-invite': {
       post: {
         tags: ['Clients'],
-        summary: 'Send a portal welcome email to the client',
-        description: 'Marks the client as ACTIVE and emails them the portal URL. The client then authenticates using their email via the OTP flow.',
+        summary: 'Send a portal invite email to the client',
+        description: 'Marks the client as ACTIVE and sends a branded invite email with the portal URL. The client then signs in via the passwordless OTP flow.',
         security: [adminAuth],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
@@ -794,6 +982,7 @@ export const swaggerSpec: Schema = {
       post: {
         tags: ['Projects'],
         summary: 'Create a project for a client',
+        description: 'Creates the project and emails the client a project welcome notification with a portal link.',
         security: [adminAuth],
         requestBody: {
           required: true,
@@ -843,6 +1032,7 @@ export const swaggerSpec: Schema = {
       put: {
         tags: ['Projects'],
         summary: 'Update a project',
+        description: 'If the `status` field changes, the client is automatically notified by email.',
         security: [adminAuth],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
@@ -921,7 +1111,8 @@ export const swaggerSpec: Schema = {
     '/api/projects/{id}/milestones/{milestoneId}': {
       put: {
         tags: ['Milestones'],
-        summary: 'Update a milestone. Setting status to COMPLETED auto-records completedAt.',
+        summary: 'Update a milestone',
+        description: 'Setting `status` to `COMPLETED` auto-records `completedAt` and emails the client a milestone completion notification.',
         security: [adminAuth],
         parameters: [
           { name: 'id',          in: 'path', required: true, schema: { type: 'string' } },
@@ -969,7 +1160,7 @@ export const swaggerSpec: Schema = {
       post: {
         tags: ['Project Updates'],
         summary: 'Post a project update',
-        description: 'Set `isVisible: true` to show the update to the client in the portal. `isVisible: false` keeps it internal.',
+        description: 'Set `isVisible: true` to show the update in the client portal — the client is also notified by email. `isVisible: false` keeps it internal (no email sent).',
         security: [adminAuth],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
