@@ -46,7 +46,8 @@ export const authController = {
       const result = await authService.login(email, password);
       sendSuccess(res, result, result.message);
     } catch (err: any) {
-      sendError(res, err.message || 'Login failed', 401);
+      const isAuthError = err.message?.includes('Invalid email') || err.message?.includes('verify your email') || err.message?.includes('pending approval');
+      sendError(res, err.message || 'Login failed', isAuthError ? 401 : 500);
     }
   },
 

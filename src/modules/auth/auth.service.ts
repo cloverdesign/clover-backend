@@ -143,7 +143,11 @@ export const authService = {
       data:  { loginOtp: otp, loginOtpExpiry: expiry },
     });
 
-    await mailer.sendAdminLoginOtp(email, admin.name, otp);
+    try {
+      await mailer.sendAdminLoginOtp(email, admin.name, otp);
+    } catch {
+      throw new Error('Failed to send verification code — please check your email configuration');
+    }
 
     return { message: 'A verification code has been sent to your email' };
   },
