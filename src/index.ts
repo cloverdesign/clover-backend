@@ -2,7 +2,6 @@ import './config/env';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import swaggerUi from 'swagger-ui-express';
 
 import { env } from './config/env';
 import { swaggerSpec } from './config/swagger';
@@ -53,22 +52,59 @@ app.use(httpLogger);
 // ─── Static Files ─────────────────────────────────────────────────────────────
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-// ─── Swagger Docs ─────────────────────────────────────────────────────────────
-// Use CDN-hosted assets so Swagger UI works on read-only/serverless filesystems
-// where node_modules/swagger-ui-dist may not be accessible at runtime.
-const SWAGGER_UI_VERSION = '5.18.2';
-const SWAGGER_CDN = `https://unpkg.com/swagger-ui-dist@${SWAGGER_UI_VERSION}`;
-
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customSiteTitle: 'Clover CMS API Docs',
-  swaggerOptions:  { persistAuthorization: true },
-  customCssUrl:    `${SWAGGER_CDN}/swagger-ui.css`,
-  customJs:        [
-    `${SWAGGER_CDN}/swagger-ui-bundle.js`,
-    `${SWAGGER_CDN}/swagger-ui-standalone-preset.js`,
-  ],
-}));
+// ─── API Docs (Scalar) ────────────────────────────────────────────────────────
 app.get('/docs.json', (_req, res) => res.json(swaggerSpec));
+app.get('/docs', (_req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clover API Docs</title>
+</head>
+<body>
+  <script
+    id="api-reference"
+    data-url="/docs.json"
+    data-configuration='${JSON.stringify({
+      theme: "default",
+      darkMode: false,
+      layout: "modern",
+      showSidebar: true,
+      searchHotKey: "k",
+      defaultHttpClient: { targetKey: "javascript", clientKey: "fetch" },
+      customCss: `
+        :root {
+          --scalar-color-1: #0f172a;
+          --scalar-color-2: #475569;
+          --scalar-color-3: #94a3b8;
+          --scalar-color-accent: #2E7D52;
+          --scalar-background-1: #ffffff;
+          --scalar-background-2: #f8fafc;
+          --scalar-background-3: #f1f5f9;
+          --scalar-background-accent: #f0fdf4;
+          --scalar-border-color: #e2e8f0;
+          --scalar-sidebar-background-1: #0f172a;
+          --scalar-sidebar-color-1: #f1f5f9;
+          --scalar-sidebar-color-2: #94a3b8;
+          --scalar-sidebar-color-active: #ffffff;
+          --scalar-sidebar-background-active: #1e293b;
+          --scalar-sidebar-border-color: #1e293b;
+          --scalar-color-green: #16a34a;
+          --scalar-color-red: #dc2626;
+          --scalar-color-yellow: #d97706;
+          --scalar-color-blue: #2563eb;
+          --scalar-color-orange: #ea580c;
+          --scalar-color-purple: #9333ea;
+        }
+      `,
+    })}'>
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+</body>
+</html>`);
+});
+
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 app.get('/', (_req, res) => res.redirect('/health'));
