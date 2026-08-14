@@ -146,7 +146,7 @@ export const invoicesService = {
       invoice.amount,
       invoice.currency,
       invoice.dueDate,
-      `${env.BASE_URL}/portal`,
+      `${env.FRONTEND_URL}/portal`,
       pdfPath,
     );
 

@@ -42,7 +42,7 @@ export const createUpdateSchema = z.object({
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function portalProjectUrl(projectId: string) {
-  return `${env.BASE_URL}/portal/projects/${projectId}`;
+  return `${env.FRONTEND_URL}/portal/projects/${projectId}`;
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────

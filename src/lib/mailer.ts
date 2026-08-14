@@ -423,7 +423,7 @@ export const mailer = {
         t.tag(approved ? 'Approved' : 'Changes requested', approved ? 'green' : 'warn') +
         t.p(`<strong style="color:#0f0f0f;font-weight:600;">${clientName}</strong> has ${approved ? 'approved' : 'requested changes on'} <strong style="color:#0f0f0f;font-weight:600;">${deliverableTitle}</strong> on project <strong style="color:#0f0f0f;font-weight:600;">${projectName}</strong>.`) +
         (comment ? t.quote(comment) : '') +
-        t.btn('View in admin panel', `${env.BASE_URL}/admin`)
+        t.btn('View in admin panel', `${env.FRONTEND_URL}/admin`)
       ),
     });
   },
@@ -442,7 +442,7 @@ export const mailer = {
         t.h('New revision request') +
         t.p(`<strong style="color:#0f0f0f;font-weight:600;">${clientName}</strong> has submitted a revision request for <strong style="color:#0f0f0f;font-weight:600;">${projectName}</strong>.`) +
         t.quote(description) +
-        t.btn('View in admin panel', `${env.BASE_URL}/admin`)
+        t.btn('View in admin panel', `${env.FRONTEND_URL}/admin`)
       ),
     });
   },

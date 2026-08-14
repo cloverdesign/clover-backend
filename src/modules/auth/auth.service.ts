@@ -111,7 +111,7 @@ export const authService = {
     mailer.sendAdminApprovalRequest(
       admin.name,
       admin.email,
-      `${env.BASE_URL}/admin/admins`,
+      `${env.FRONTEND_URL}/admin/admins`,
     ).catch(() => {});
 
     return { message: 'Email verified. Your account is pending approval by a super admin. You will be notified once approved.' };

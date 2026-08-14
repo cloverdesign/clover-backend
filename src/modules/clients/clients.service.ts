@@ -231,7 +231,7 @@ export const clientsService = {
     const client = await prisma.client.findUnique({ where: { id: clientId } });
     if (!client) throw new Error('Client not found');
 
-    const portalUrl = `${env.BASE_URL}/portal`;
+    const portalUrl = `${env.FRONTEND_URL}/portal`;
 
     await prisma.client.update({
       where: { id: clientId },
