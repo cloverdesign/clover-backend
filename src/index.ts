@@ -38,7 +38,7 @@ import {
 } from './modules/revisions/revisions.routes';
 
 const app = express();
-const corsOrigins = env.FRONTEND_URL
+const corsOrigins = env.CORS_ORIGINS
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);

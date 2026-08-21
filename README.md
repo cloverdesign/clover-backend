@@ -101,6 +101,7 @@ Example `.env`:
 
 ```
 DATABASE_URL="postgresql://postgres:password@localhost:5432/clover_cms"
+CORS_ORIGINS="http://localhost:5173"
 JWT_SECRET="replace-this-with-a-long-random-secret"
 PORT=3000
 NODE_ENV=development
