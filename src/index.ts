@@ -38,10 +38,21 @@ import {
 } from './modules/revisions/revisions.routes';
 
 const app = express();
+const corsOrigins = env.FRONTEND_URL
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 // ─── Global Middleware ────────────────────────────────────────────────────────
 app.use(cors({
-  origin:         '*',
+  origin: (requestOrigin, callback) => {
+    if (!requestOrigin || corsOrigins.includes(requestOrigin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`CORS origin not allowed: ${requestOrigin}`));
+  },
   methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
