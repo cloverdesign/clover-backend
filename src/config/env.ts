@@ -16,6 +16,7 @@ export const env = {
   BASE_URL:     process.env.BASE_URL     || 'http://localhost:3000',
   CORS_ORIGINS: process.env.CORS_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:5173',
   FRONTEND_URL: process.env.FRONTEND_URL || process.env.CORS_ORIGINS?.split(',')[0]?.trim() || 'http://localhost:5173',
+  PORTAL_BASE_URL: process.env.PORTAL_BASE_URL || 'https://clients.cloverdesign.xyz',
 
   // Database
   DATABASE_URL: requireEnv('DATABASE_URL'),

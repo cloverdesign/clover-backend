@@ -96,6 +96,7 @@ cp .env.example .env
 | `PORT` | No | `3000` | Port the server listens on |
 | `NODE_ENV` | No | `development` | `development` or `production` |
 | `BASE_URL` | No | `http://localhost:3000` | Public base URL, used to build onboarding and password reset links |
+| `PORTAL_BASE_URL` | No | `https://clients.cloverdesign.xyz` | Client portal base URL used in emails and client-facing links |
 
 Example `.env`:
 
@@ -106,6 +107,7 @@ JWT_SECRET="replace-this-with-a-long-random-secret"
 PORT=3000
 NODE_ENV=development
 BASE_URL="http://localhost:3000"
+PORTAL_BASE_URL="https://clients.cloverdesign.xyz"
 ```
 
 The server will throw on startup if `DATABASE_URL` or `JWT_SECRET` are missing.

@@ -91,7 +91,7 @@ export const deliverablesService = {
       project.client.name,
       data.title,
       project.name,
-      `${env.FRONTEND_URL}/portal`,
+      `${env.PORTAL_BASE_URL}/portal`,
     );
 
     return deliverable;

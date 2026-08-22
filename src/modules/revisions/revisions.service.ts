@@ -81,7 +81,7 @@ export const revisionsService = {
         request.client.name,
         request.project.name,
         data.status,
-        `${env.FRONTEND_URL}/portal`,
+        `${env.PORTAL_BASE_URL}/portal`,
       );
     }
 
@@ -127,7 +127,7 @@ export const revisionsService = {
       request.client.name,
       request.project.name,
       'APPROVED',
-      `${env.FRONTEND_URL}/portal`,
+      `${env.PORTAL_BASE_URL}/portal`,
     );
 
     return updated;
