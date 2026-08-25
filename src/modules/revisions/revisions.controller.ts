@@ -66,7 +66,8 @@ export const revisionsController = {
       );
       sendSuccess(res, request, 'Revision request submitted', 201);
     } catch (err: any) {
-      sendError(res, err.message, err.message === 'Project not found' ? 404 : 500);
+      const notFound = err.message === 'Project not found' || err.message === 'Deliverable not found';
+      sendError(res, err.message, notFound ? 404 : 500);
     }
   },
 

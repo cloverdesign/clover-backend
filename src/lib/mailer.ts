@@ -453,10 +453,16 @@ export const mailer = {
     email: string,
     clientName: string,
     projectName: string,
-    status: 'IN_REVIEW' | 'APPROVED' | 'DECLINED',
+    status: 'REQUESTED' | 'IN_REVIEW' | 'APPROVED' | 'DECLINED',
     portalUrl: string,
+    decisionNote?: string | null,
   ): Promise<void> {
     const config: Record<string, { label: string; variant: 'green' | 'neutral' | 'decline'; body: string }> = {
+      REQUESTED: {
+        label:   'Received',
+        variant: 'neutral',
+        body:    `We have received your revision request for <strong style="color:#0f0f0f;font-weight:600;">${projectName}</strong>. Our team will review it shortly.`,
+      },
       IN_REVIEW: {
         label:   'Under review',
         variant: 'neutral',
@@ -483,6 +489,7 @@ export const mailer = {
         t.h('Revision request update') +
         t.tag(label, variant) +
         t.p(`Hi ${clientName}, ${body}`) +
+        (decisionNote ? t.quote(decisionNote) : '') +
         t.btn('View in portal', portalUrl)
       ),
     });

@@ -109,6 +109,14 @@ export const projectsController = {
     }
   },
 
+  async listMilestones(req: Request, res: Response): Promise<void> {
+    try {
+      sendSuccess(res, await projectsService.listMilestones(param(req.params.id)), 'Milestones retrieved');
+    } catch (err: any) {
+      sendError(res, err.message || 'Failed to retrieve milestones', err.message === 'Project not found' ? 404 : 500);
+    }
+  },
+
   async updateMilestone(req: Request, res: Response): Promise<void> {
     try {
       const parsed = updateMilestoneSchema.safeParse(req.body);
@@ -165,6 +173,14 @@ export const projectsController = {
         err.message || 'Failed to post update',
         err.message === 'Project not found' ? 404 : 500
       );
+    }
+  },
+
+  async listUpdates(req: Request, res: Response): Promise<void> {
+    try {
+      sendSuccess(res, await projectsService.listUpdates(param(req.params.id)), 'Updates retrieved');
+    } catch (err: any) {
+      sendError(res, err.message || 'Failed to retrieve updates', err.message === 'Project not found' ? 404 : 500);
     }
   },
 

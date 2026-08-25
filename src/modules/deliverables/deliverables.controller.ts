@@ -67,6 +67,15 @@ export const deliverablesController = {
     }
   },
 
+  async listAllForClient(req: ClientAuthRequest, res: Response): Promise<void> {
+    try {
+      const deliverables = await deliverablesService.listAllForClient(req.client!.clientId);
+      sendSuccess(res, deliverables, 'Deliverables retrieved');
+    } catch (err: any) {
+      sendError(res, err.message, 500);
+    }
+  },
+
   async review(req: ClientAuthRequest, res: Response): Promise<void> {
     try {
       const parsed = reviewDeliverableSchema.safeParse(req.body);

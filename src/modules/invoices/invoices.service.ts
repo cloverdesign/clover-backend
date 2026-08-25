@@ -44,6 +44,24 @@ export const invoicesService = {
     });
   },
 
+  async listForClient(projectId: string, clientId: string) {
+    const project = await prisma.project.findFirst({ where: { id: projectId, clientId } });
+    if (!project) throw new Error('Project not found');
+
+    return prisma.invoice.findMany({
+      where: { projectId, status: { not: 'DRAFT' } },
+      orderBy: { issuedDate: 'desc' },
+    });
+  },
+
+  // Client portal: issued invoices across all of the client's projects
+  async listAllForClient(clientId: string) {
+    return prisma.invoice.findMany({
+      where:   { status: { not: 'DRAFT' }, project: { clientId } },
+      orderBy: { issuedDate: 'desc' },
+    });
+  },
+
   async create(projectId: string, data: z.infer<typeof createInvoiceSchema>) {
     const project = await prisma.project.findUnique({
       where:   { id: projectId },

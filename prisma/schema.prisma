@@ -11,19 +11,20 @@ datasource db {
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 model Admin {
-  id                      String    @id @default(cuid())
-  email                   String    @unique
+  id                      String         @id @default(cuid())
+  email                   String         @unique
   password                String
   name                    String
-  role                    AdminRole @default(ADMIN)
-  emailVerified           Boolean   @default(false)
-  approved                Boolean   @default(false)
-  verificationToken       String?   @unique
+  role                    AdminRole      @default(ADMIN)
+  emailVerified           Boolean        @default(false)
+  approved                Boolean        @default(false)
+  verificationToken       String?        @unique
   verificationTokenExpiry DateTime?
   loginOtp                String?
   loginOtpExpiry          DateTime?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  notifications           Notification[]
 }
 
 enum AdminRole {
@@ -184,6 +185,7 @@ model Milestone {
   status       MilestoneStatus @default(PENDING)
   order        Int
   dueDate      DateTime?
+  phase        String?
   completedAt  DateTime?
   deliverables Deliverable[]
   createdAt    DateTime        @default(now())
@@ -284,11 +286,32 @@ model RevisionRequest {
   description        String
   targetTimeframe    String?
   attachments        Json                  @default("[]")
+  deliverableId      String?
+  decisionNote       String?
   status             RevisionRequestStatus @default(REQUESTED)
   resultingProjectId String?
   resultingPhaseNote String?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  adminId    String
+  admin      Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  type       String
+  title      String
+  body       String?
+  href       String?
+  entityType String?
+  entityId   String?
+  read       Boolean  @default(false)
+  sourceKey  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([adminId, sourceKey])
+  @@index([adminId, createdAt])
 }
 
 enum RevisionRequestStatus {

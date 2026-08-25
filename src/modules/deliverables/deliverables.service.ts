@@ -2,6 +2,7 @@ import { z } from 'zod';
 import prisma from '../../lib/prisma';
 import { env } from '../../config/env';
 import { mailer } from '../../lib/mailer';
+import { notificationsService } from '../notifications/notifications.service';
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,17 @@ export const deliverablesService = {
       `${env.PORTAL_BASE_URL}/portal`,
     );
 
+    // Notify admins — deliverable is now awaiting client sign-off
+    await notificationsService.notifyApprovedAdmins({
+      type:       'DELIVERABLE_REVIEW',
+      title:      'Deliverable submitted',
+      body:       `${project.name} · ${deliverable.title}`,
+      href:       `/admin/projects/${projectId}`,
+      entityType: 'deliverable',
+      entityId:   deliverable.id,
+      sourceKey:  `deliverable-review:${deliverable.id}`,
+    });
+
     return deliverable;
   },
 
@@ -151,7 +163,7 @@ export const deliverablesService = {
     const project = await prisma.project.findFirst({ where: { id: projectId, clientId } });
     if (!project) throw new Error('Project not found');
 
-    return prisma.deliverable.findMany({
+    const deliverables = await prisma.deliverable.findMany({
       where:   { projectId, status: 'READY' },
       orderBy: { uploadedAt: 'desc' },
       include: {
@@ -159,5 +171,26 @@ export const deliverablesService = {
         reviews:   { orderBy: { createdAt: 'desc' }, take: 1 },
       },
     });
+    return deliverables.map(({ reviews, ...deliverable }) => ({
+      ...deliverable,
+      review: reviews[0] ?? null,
+    }));
+  },
+
+  // Client portal: READY deliverables across all of the client's projects
+  async listAllForClient(clientId: string) {
+    const deliverables = await prisma.deliverable.findMany({
+      where:   { status: 'READY', project: { clientId } },
+      orderBy: { uploadedAt: 'desc' },
+      include: {
+        milestone: { select: { id: true, title: true } },
+        project:   { select: { id: true, name: true } },
+        reviews:   { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+    return deliverables.map(({ reviews, ...deliverable }) => ({
+      ...deliverable,
+      review: reviews[0] ?? null,
+    }));
   },
 };

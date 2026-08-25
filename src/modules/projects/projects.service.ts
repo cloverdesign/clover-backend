@@ -29,6 +29,7 @@ export const createMilestoneSchema = z.object({
   status:      z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED']).optional().default('PENDING'),
   order:       z.number().int().min(0),
   dueDate:     z.string().datetime().optional(),
+  phase:       z.string().optional(),
 });
 
 export const updateMilestoneSchema = createMilestoneSchema.partial();
@@ -168,8 +169,15 @@ export const projectsService = {
         status:      data.status,
         order:       data.order,
         dueDate:     data.dueDate ? new Date(data.dueDate) : undefined,
+        phase:        data.phase,
       },
     });
+  },
+
+  async listMilestones(projectId: string) {
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new Error('Project not found');
+    return prisma.milestone.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
   },
 
   async updateMilestone(
@@ -249,6 +257,12 @@ export const projectsService = {
     }
 
     return update;
+  },
+
+  async listUpdates(projectId: string) {
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new Error('Project not found');
+    return prisma.projectUpdate.findMany({ where: { projectId }, orderBy: { createdAt: 'desc' } });
   },
 
   async deleteUpdate(projectId: string, updateId: string) {

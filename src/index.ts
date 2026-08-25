@@ -17,6 +17,7 @@ import mediaRoutes   from './modules/media/media.routes';
 import clientsRoutes from './modules/clients/clients.routes';
 import portalRoutes  from './modules/clients/portal.routes';
 import projectsRoutes from './modules/projects/projects.routes';
+import notificationsRoutes from './modules/notifications/notifications.routes';
 
 // ── Invoices ──────────────────────────────────────────────────────────────────
 import invoiceProjectRoutes    from './modules/invoices/invoices.routes';
@@ -132,6 +133,7 @@ app.use('/api/pages',             pagesRoutes);
 app.use('/api/media',             mediaRoutes);
 app.use('/api/clients',           clientsRoutes);
 app.use('/api/projects',          projectsRoutes);
+app.use('/api/notifications',     notificationsRoutes);
 
 // Invoices: nested under projects + standalone
 app.use('/api/projects/:id/invoices', invoiceProjectRoutes);

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { invoicesService, createInvoiceSchema, updateInvoiceSchema } from './invoices.service';
 import { sendSuccess, sendError } from '../../utils/response';
+import { ClientAuthRequest } from '../../middleware/auth';
 
 const param = (v: string | string[]) => (Array.isArray(v) ? v[0] : v);
 
@@ -14,6 +15,27 @@ export const invoicesController = {
       sendSuccess(res, await invoicesService.listByProject(param(req.params.id)), 'Invoices retrieved');
     } catch (err: any) {
       sendError(res, err.message, notFound(err.message) ? 404 : 500);
+    }
+  },
+
+  async listForClient(req: ClientAuthRequest, res: Response): Promise<void> {
+    try {
+      const invoices = await invoicesService.listForClient(
+        param(req.params.id),
+        req.client!.clientId,
+      );
+      sendSuccess(res, invoices, 'Invoices retrieved');
+    } catch (err: any) {
+      sendError(res, err.message, err.message === 'Project not found' ? 404 : 500);
+    }
+  },
+
+  async listAllForClient(req: ClientAuthRequest, res: Response): Promise<void> {
+    try {
+      const invoices = await invoicesService.listAllForClient(req.client!.clientId);
+      sendSuccess(res, invoices, 'Invoices retrieved');
+    } catch (err: any) {
+      sendError(res, err.message, 500);
     }
   },
 

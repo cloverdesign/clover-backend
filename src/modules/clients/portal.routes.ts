@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { clientsController } from './clients.controller';
 import { requireClient } from '../../middleware/auth';
+import { invoicesController } from '../invoices/invoices.controller';
+import { deliverablesController } from '../deliverables/deliverables.controller';
 
 const router = Router();
 
@@ -28,5 +30,12 @@ router.get('/projects', (req, res) => clientsController.portalProjects(req as an
 
 // GET  /api/portal/projects/:id
 router.get('/projects/:id', (req, res) => clientsController.portalProjectById(req as any, res));
+router.get('/projects/:id/invoices', (req, res) => invoicesController.listForClient(req as any, res));
+
+// GET  /api/portal/deliverables — READY deliverables across all of the client's projects
+router.get('/deliverables', (req, res) => deliverablesController.listAllForClient(req as any, res));
+
+// GET  /api/portal/invoices — issued invoices across all of the client's projects
+router.get('/invoices', (req, res) => invoicesController.listAllForClient(req as any, res));
 
 export default router;

@@ -22,6 +22,8 @@ router.put('/:id', (req, res) => projectsController.updateProject(req, res));
 router.delete('/:id', (req, res) => projectsController.deleteProject(req, res));
 
 // POST   /api/projects/:id/milestones
+router.get('/:id/milestones', (req, res) => projectsController.listMilestones(req, res));
+
 router.post('/:id/milestones', (req, res) =>
   projectsController.addMilestone(req, res)
 );
@@ -35,6 +37,9 @@ router.put('/:id/milestones/:milestoneId', (req, res) =>
 router.delete('/:id/milestones/:milestoneId', (req, res) =>
   projectsController.deleteMilestone(req, res)
 );
+
+// GET    /api/projects/:id/updates
+router.get('/:id/updates', (req, res) => projectsController.listUpdates(req, res));
 
 // POST   /api/projects/:id/updates
 router.post('/:id/updates', (req, res) => projectsController.addUpdate(req, res));
