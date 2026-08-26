@@ -69,6 +69,7 @@ export const swaggerSpec: Schema = {
     { name: 'Invoices',           description: 'Invoice lifecycle with PDF generation — admin only' },
     { name: 'Deliverables',       description: 'Deliverable uploads and versioning — admin only' },
     { name: 'Revision Requests',  description: 'Client revision request queue — admin only' },
+    { name: 'Notifications',      description: 'Server-generated attention feed for the admin header bell — admin only' },
     { name: 'Portal Auth',        description: 'Client portal — passwordless OTP authentication' },
     { name: 'Portal',             description: 'Client portal — profile, projects, deliverables, revisions' },
   ],
@@ -202,6 +203,7 @@ export const swaggerSpec: Schema = {
           status:      { type: 'string', enum: ['PENDING','IN_PROGRESS','COMPLETED'] },
           order:       { type: 'integer' },
           dueDate:     { type: 'string', format: 'date-time', nullable: true },
+          phase:       { type: 'string', nullable: true, example: 'Design', description: 'Free-text phase label — mirrors Project.phase, used to group milestones on a timeline' },
           completedAt: { type: 'string', format: 'date-time', nullable: true },
           createdAt:   { type: 'string', format: 'date-time' },
           updatedAt:   { type: 'string', format: 'date-time' },
@@ -262,6 +264,11 @@ export const swaggerSpec: Schema = {
           fileUrl:      { type: 'string', nullable: true },
           externalLink: { type: 'string', nullable: true, example: 'https://figma.com/file/...' },
           status:       { type: 'string', enum: ['READY','SUPERSEDED'] },
+          review: {
+            nullable:    true,
+            description: "The client's latest review of this version — only populated on client portal reads (GET /api/portal/projects/{id}/deliverables and GET /api/portal/deliverables)",
+            allOf:       [{ $ref: '#/components/schemas/DeliverableReview' }],
+          },
           uploadedAt:   { type: 'string', format: 'date-time' },
           createdAt:    { type: 'string', format: 'date-time' },
           updatedAt:    { type: 'string', format: 'date-time' },
@@ -298,11 +305,28 @@ export const swaggerSpec: Schema = {
               },
             },
           },
+          deliverableId:      { type: 'string', nullable: true, description: 'Set when this request was raised from a deliverable "request changes" review — a deliberate promotion, not automatic' },
           status:             { type: 'string', enum: ['REQUESTED','IN_REVIEW','APPROVED','DECLINED'] },
-          resultingProjectId: { type: 'string', nullable: true },
-          resultingPhaseNote: { type: 'string', nullable: true },
+          resultingProjectId: { type: 'string', nullable: true, description: 'Set on approval — the new project for `new_project`, or the parent project itself for `new_phase` (symmetric across both approval types)' },
+          decisionNote:       { type: 'string', nullable: true, description: 'Reason shown to the client for the terminal decision — e.g. a decline reason, or a note attached to an approval' },
+          resultingPhaseNote: { type: 'string', nullable: true, deprecated: true, description: 'Deprecated — prefer `decisionNote`. No longer written on new approvals.' },
           createdAt:          { type: 'string', format: 'date-time' },
           updatedAt:          { type: 'string', format: 'date-time' },
+        },
+      },
+
+      Notification: {
+        type: 'object',
+        properties: {
+          id:         { type: 'string' },
+          type:       { type: 'string', enum: ['INVOICE_OVERDUE','REVISION_REQUESTED','DELIVERABLE_REVIEW','MILESTONE_DUE'] },
+          title:      { type: 'string', example: 'Invoice overdue' },
+          body:       { type: 'string', nullable: true, example: 'Acme Co · $4,200 · 3 days late' },
+          href:       { type: 'string', nullable: true, description: 'In-app deep link the bell navigates to on click', example: '/admin/invoices/inv_123' },
+          entityType: { type: 'string', nullable: true, enum: ['invoice','revision','deliverable','milestone','project'] },
+          entityId:   { type: 'string', nullable: true },
+          read:       { type: 'boolean', description: 'Whether the calling admin has read this notification' },
+          createdAt:  { type: 'string', format: 'date-time' },
         },
       },
     },
@@ -1079,6 +1103,16 @@ export const swaggerSpec: Schema = {
 
     // ── Milestones ───────────────────────────────────────────────────────────
     '/api/projects/{id}/milestones': {
+      get: {
+        tags: ['Milestones'],
+        summary: 'List milestones for a project, ordered ascending',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: success({ type: 'array', items: { $ref: '#/components/schemas/Milestone' } }),
+          404: err('Project not found'),
+        },
+      },
       post: {
         tags: ['Milestones'],
         summary: 'Add a milestone to a project',
@@ -1096,6 +1130,7 @@ export const swaggerSpec: Schema = {
                   status:      { type: 'string', enum: ['PENDING','IN_PROGRESS','COMPLETED'], default: 'PENDING' },
                   order:       { type: 'integer' },
                   dueDate:     { type: 'string', format: 'date-time' },
+                  phase:       { type: 'string', example: 'Design' },
                 },
               },
             },
@@ -1130,6 +1165,7 @@ export const swaggerSpec: Schema = {
                   status:      { type: 'string', enum: ['PENDING','IN_PROGRESS','COMPLETED'] },
                   order:       { type: 'integer' },
                   dueDate:     { type: 'string', format: 'date-time' },
+                  phase:       { type: 'string' },
                 },
               },
             },
@@ -1157,6 +1193,16 @@ export const swaggerSpec: Schema = {
 
     // ── Project Updates ──────────────────────────────────────────────────────
     '/api/projects/{id}/updates': {
+      get: {
+        tags: ['Project Updates'],
+        summary: 'List all updates for a project (internal and visible), newest first',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: success({ type: 'array', items: { $ref: '#/components/schemas/ProjectUpdate' } }),
+          404: err('Project not found'),
+        },
+      },
       post: {
         tags: ['Project Updates'],
         summary: 'Post a project update',
@@ -1465,6 +1511,7 @@ export const swaggerSpec: Schema = {
       put: {
         tags: ['Revision Requests'],
         summary: 'Update status (IN_REVIEW or DECLINED) — notifies client by email',
+        description: 'To approve with substance (scaffolding a new project or phase), use `POST /api/revision-requests/{id}/approve` instead. `decisionNote` is included in the client-facing status update email — use it to explain a decline.',
         security: [adminAuth],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
@@ -1474,8 +1521,8 @@ export const swaggerSpec: Schema = {
               schema: {
                 type: 'object', required: ['status'],
                 properties: {
-                  status:             { type: 'string', enum: ['IN_REVIEW','APPROVED','DECLINED'] },
-                  resultingPhaseNote: { type: 'string', description: 'Optional note if approving as a new phase' },
+                  status:       { type: 'string', enum: ['IN_REVIEW','APPROVED','DECLINED'] },
+                  decisionNote: { type: 'string', description: 'Reason shown to the client — e.g. why the request was declined' },
                 },
               },
             },
@@ -1495,9 +1542,9 @@ export const swaggerSpec: Schema = {
         description: [
           'Two approval modes:',
           '- `new_project` — scaffolds a new Project linked to the original via `parentProjectId`. Requires `projectName`.',
-          '- `new_phase` — notes the revision as a new phase on the existing project. Requires `phaseNote`.',
+          '- `new_phase` — the admin authors the phase inline: creates the given `milestones` on the *existing* project (tagged with `phase`, appended after the current max order), sets `Project.phase` to `phase`, and — if `endDate` is given and later than the current one — extends `Project.endDate`. `resultingProjectId` is set to the parent project itself, symmetric with `new_project`. Requires `phase` and at least one entry in `milestones`.',
           '',
-          'Client is notified by email in both cases.',
+          'Client is notified by email in both cases, including `decisionNote` if provided.',
         ].join('\n'),
         security: [adminAuth],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
@@ -1509,9 +1556,26 @@ export const swaggerSpec: Schema = {
                 type: 'object', required: ['type'],
                 properties: {
                   type:               { type: 'string', enum: ['new_project','new_phase'] },
-                  projectName:        { type: 'string', description: 'Required when type is new_project' },
+                  projectName:        { type: 'string', description: 'Used when type is new_project' },
                   projectDescription: { type: 'string' },
-                  phaseNote:          { type: 'string', description: 'Required when type is new_phase' },
+                  phase:              { type: 'string', example: 'Phase 2 — Rollout', description: 'Required when type is new_phase — phase label written to the new milestones and to Project.phase' },
+                  milestones: {
+                    type: 'array',
+                    description: 'Required when type is new_phase — at least one entry',
+                    items: {
+                      type: 'object', required: ['title'],
+                      properties: {
+                        title:   { type: 'string', example: 'Rollout kickoff' },
+                        dueDate: { type: 'string', format: 'date-time' },
+                      },
+                    },
+                    example: [
+                      { title: 'Rollout kickoff', dueDate: '2026-10-01T00:00:00.000Z' },
+                      { title: 'Go-live',         dueDate: '2026-11-15T00:00:00.000Z' },
+                    ],
+                  },
+                  endDate:      { type: 'string', format: 'date-time', description: "Optional, new_phase only — extends the project's target finish. Ignored if earlier than the current endDate." },
+                  decisionNote: { type: 'string', description: 'Note shown to the client alongside the approval' },
                 },
               },
             },
@@ -1519,8 +1583,64 @@ export const swaggerSpec: Schema = {
         },
         responses: {
           200: success({ $ref: '#/components/schemas/RevisionRequest' }),
+          400: err('phase is required for new_phase approvals / At least one milestone is required for new_phase approvals'),
           404: err('Revision request not found'),
           409: err('Already approved'),
+        },
+      },
+    },
+
+    // ── Notifications ────────────────────────────────────────────────────────
+    '/api/notifications': {
+      get: {
+        tags: ['Notifications'],
+        summary: "List the calling admin's notifications, newest first",
+        description: 'Capped at the 50 most recent. `INVOICE_OVERDUE` and `MILESTONE_DUE` are derived lazily on each call from current invoice/milestone state (there is no background scheduler); `REVISION_REQUESTED` and `DELIVERABLE_REVIEW` are created at the moment those events happen, for every approved admin. Intended to be polled roughly every 60s. There is no separate unread-count endpoint — derive it client-side from `data.filter(n => !n.read).length`.',
+        security: [adminAuth],
+        responses: {
+          200: success({ type: 'array', items: { $ref: '#/components/schemas/Notification' } }),
+          401: err('Unauthorized'),
+        },
+      },
+    },
+
+    '/api/notifications/{id}/read': {
+      patch: {
+        tags: ['Notifications'],
+        summary: 'Mark one notification read (or unread)',
+        description: '404s if the notification does not belong to the calling admin.',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { read: { type: 'boolean', default: true, description: 'Pass false to mark unread again' } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: success({ $ref: '#/components/schemas/Notification' }),
+          404: err('Notification not found'),
+        },
+      },
+    },
+
+    '/api/notifications/read-all': {
+      post: {
+        tags: ['Notifications'],
+        summary: "Mark all of the calling admin's notifications read",
+        description: "Powers the dropdown's \"Mark all read\" action.",
+        security: [adminAuth],
+        responses: {
+          200: success({
+            type: 'object',
+            properties: { updated: { type: 'integer', example: 4, description: 'Number of notifications flipped from unread to read' } },
+          }),
+          401: err('Unauthorized'),
         },
       },
     },
@@ -1664,11 +1784,52 @@ export const swaggerSpec: Schema = {
       get: {
         tags: ['Portal'],
         summary: "List ready deliverables on a project",
+        description: "Each deliverable includes the client's own latest `review` on that version, so the portal can show \"You approved this\" / \"Changes requested\" durably instead of resetting on reload.",
         security: [clientAuth],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           200: success({ type: 'array', items: { $ref: '#/components/schemas/Deliverable' } }),
           404: err('Project not found'),
+        },
+      },
+    },
+
+    '/api/portal/projects/{id}/invoices': {
+      get: {
+        tags: ['Portal'],
+        summary: "List a project's issued invoices",
+        description: 'Excludes DRAFT invoices — drafts stay internal to the studio. Sorted by issuedDate desc.',
+        security: [clientAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: success({ type: 'array', items: { $ref: '#/components/schemas/Invoice' } }),
+          404: err('Project not found'),
+        },
+      },
+    },
+
+    '/api/portal/deliverables': {
+      get: {
+        tags: ['Portal'],
+        summary: "List READY deliverables across all of the client's projects",
+        description: 'Collapses the per-project deliverable fan-out into a single request for the dashboard. Same item shape as the per-project read, including the embedded `review`.',
+        security: [clientAuth],
+        responses: {
+          200: success({ type: 'array', items: { $ref: '#/components/schemas/Deliverable' } }),
+          401: err('Unauthorized'),
+        },
+      },
+    },
+
+    '/api/portal/invoices': {
+      get: {
+        tags: ['Portal'],
+        summary: "List issued invoices across all of the client's projects",
+        description: 'Collapses the per-project invoice fan-out into a single request for the dashboard billing snapshot. Excludes DRAFT invoices.',
+        security: [clientAuth],
+        responses: {
+          200: success({ type: 'array', items: { $ref: '#/components/schemas/Invoice' } }),
+          401: err('Unauthorized'),
         },
       },
     },
@@ -1706,7 +1867,7 @@ export const swaggerSpec: Schema = {
       post: {
         tags: ['Portal'],
         summary: 'Submit a revision request on a project',
-        description: 'Client describes what they need. Admin is notified by email and the request enters the revision queue.',
+        description: 'Client describes what they need. Admin is notified by email and an in-app notification, and the client gets a "received" acknowledgement email; the request enters the revision queue. Pass `deliverableId` to promote a deliverable "request changes" review into a linked revision request — this is a deliberate, opt-in action taken by the client, not automatic.',
         security: [clientAuth],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
@@ -1728,6 +1889,7 @@ export const swaggerSpec: Schema = {
                       },
                     },
                   },
+                  deliverableId: { type: 'string', description: 'Optional — links this request to the deliverable it was raised from. Must belong to the same project.' },
                 },
               },
             },
@@ -1735,7 +1897,7 @@ export const swaggerSpec: Schema = {
         },
         responses: {
           201: success({ $ref: '#/components/schemas/RevisionRequest' }),
-          404: err('Project not found'),
+          404: err('Project not found / Deliverable not found'),
         },
       },
     },

@@ -222,7 +222,15 @@ export const clientsService = {
       },
     });
     if (!project) throw new Error('Project not found');
-    return project;
+
+    const { deliverables, ...rest } = project;
+    return {
+      ...rest,
+      deliverables: deliverables.map(({ reviews, ...deliverable }) => ({
+        ...deliverable,
+        review: reviews[0] ?? null,
+      })),
+    };
   },
 
   // ── Admin: invite client to portal ─────────────────────────────────────────
