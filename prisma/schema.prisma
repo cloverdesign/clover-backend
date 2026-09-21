@@ -11,20 +11,21 @@ datasource db {
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 model Admin {
-  id                      String         @id @default(cuid())
-  email                   String         @unique
+  id                      String              @id @default(cuid())
+  email                   String              @unique
   password                String
   name                    String
-  role                    AdminRole      @default(ADMIN)
-  emailVerified           Boolean        @default(false)
-  approved                Boolean        @default(false)
-  verificationToken       String?        @unique
+  role                    AdminRole           @default(ADMIN)
+  emailVerified           Boolean             @default(false)
+  approved                Boolean             @default(false)
+  verificationToken       String?             @unique
   verificationTokenExpiry DateTime?
   loginOtp                String?
   loginOtpExpiry          DateTime?
-  createdAt               DateTime       @default(now())
-  updatedAt               DateTime       @updatedAt
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
   notifications           Notification[]
+  projectAssignments      ProjectAssignment[]
 }
 
 enum AdminRole {
@@ -139,32 +140,48 @@ enum ClientStatus {
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
 model Project {
-  id               String            @id @default(cuid())
+  id               String              @id @default(cuid())
   clientId         String
-  client           Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client           Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
   parentProjectId  String?
-  parent           Project?          @relation("ProjectRevisions", fields: [parentProjectId], references: [id])
-  revisions        Project[]         @relation("ProjectRevisions")
+  parent           Project?            @relation("ProjectRevisions", fields: [parentProjectId], references: [id])
+  revisions        Project[]           @relation("ProjectRevisions")
   name             String
   type             String?
   description      String?
   phase            String?
-  status           ProjectStatus     @default(PLANNING)
-  progress         Int               @default(0)
-  currency         String            @default("USD")
+  status           ProjectStatus       @default(PLANNING)
+  progress         Int                 @default(0)
+  currency         String              @default("USD")
   totalValue       Float?
   budget           Float?
   startDate        DateTime?
   endDate          DateTime?
-  archived         Boolean           @default(false)
+  archived         Boolean             @default(false)
   notes            String?
   milestones       Milestone[]
   updates          ProjectUpdate[]
   invoices         Invoice[]
   deliverables     Deliverable[]
   revisionRequests RevisionRequest[]
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  assignments      ProjectAssignment[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+}
+
+// An admin's assignment to a project — determines what shows on their
+// dashboard and which projects' events they're notified about. SUPER_ADMIN
+// accounts bypass this and always see everything.
+model ProjectAssignment {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, adminId])
+  @@index([adminId])
 }
 
 enum ProjectStatus {

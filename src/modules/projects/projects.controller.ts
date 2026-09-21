@@ -6,16 +6,18 @@ import {
   createMilestoneSchema,
   updateMilestoneSchema,
   createUpdateSchema,
+  assignAdminSchema,
 } from './projects.service';
+import { AdminAuthRequest } from '../../middleware/auth';
 import { sendSuccess, sendError } from '../../utils/response';
 
 const param = (v: string | string[]): string =>
   Array.isArray(v) ? v[0] : v;
 
 export const projectsController = {
-  async listProjects(_req: Request, res: Response): Promise<void> {
+  async listProjects(req: AdminAuthRequest, res: Response): Promise<void> {
     try {
-      const projects = await projectsService.listProjects();
+      const projects = await projectsService.listProjects(req.admin!);
       sendSuccess(res, projects, 'Projects retrieved');
     } catch (err: any) {
       sendError(res, err.message || 'Failed to retrieve projects');
@@ -196,6 +198,41 @@ export const projectsController = {
         res,
         err.message || 'Failed to delete update',
         err.message === 'Project update not found' ? 404 : 500
+      );
+    }
+  },
+
+  // Assignments
+  async assignAdmin(req: Request, res: Response): Promise<void> {
+    try {
+      const parsed = assignAdminSchema.safeParse(req.body);
+      if (!parsed.success) {
+        sendError(res, parsed.error.errors[0].message, 400);
+        return;
+      }
+
+      const assignedAdmins = await projectsService.assignAdmin(param(req.params.id), parsed.data.adminId);
+      sendSuccess(res, assignedAdmins, 'Admin assigned', 201);
+    } catch (err: any) {
+      sendError(
+        res,
+        err.message || 'Failed to assign admin',
+        err.message === 'Project not found' || err.message === 'Admin not found' ? 404
+          : err.message === 'Admin is already assigned to this project' ? 409
+          : 500
+      );
+    }
+  },
+
+  async unassignAdmin(req: Request, res: Response): Promise<void> {
+    try {
+      const assignedAdmins = await projectsService.unassignAdmin(param(req.params.id), param(req.params.adminId));
+      sendSuccess(res, assignedAdmins, 'Admin unassigned');
+    } catch (err: any) {
+      sendError(
+        res,
+        err.message || 'Failed to unassign admin',
+        err.message === 'Admin is not assigned to this project' ? 404 : 500
       );
     }
   },

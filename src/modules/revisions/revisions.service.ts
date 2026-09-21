@@ -229,7 +229,7 @@ export const revisionsService = {
       project.name,
       data.description,
     );
-    await notificationsService.notifyApprovedAdmins({
+    await notificationsService.notifyForProject(projectId, {
       type:       'REVISION_REQUESTED',
       title:      'Revision requested',
       body:       `${project.client.name} · ${project.name}`,

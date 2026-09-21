@@ -2,6 +2,7 @@ import { z } from 'zod';
 import prisma from '../../lib/prisma';
 import { env } from '../../config/env';
 import { mailer } from '../../lib/mailer';
+import type { AdminRole } from '../../middleware/auth';
 
 export const createProjectSchema = z.object({
   clientId:       z.string().min(1, 'Client ID is required'),
@@ -40,24 +41,44 @@ export const createUpdateSchema = z.object({
   isVisible: z.boolean().optional().default(true),
 });
 
+export const assignAdminSchema = z.object({
+  adminId: z.string().min(1, 'adminId is required'),
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function portalProjectUrl(projectId: string) {
   return `${env.PORTAL_BASE_URL}/portal/projects/${projectId}`;
 }
 
+const adminSummarySelect = { id: true, name: true, email: true, role: true } as const;
+
+// Assignments are fetched as a raw join-row array; flatten to the admins
+// themselves and drop the join rows from the response shape.
+function withAssignedAdmins<T extends { assignments: { admin: unknown }[] }>(
+  project: T,
+): Omit<T, 'assignments'> & { assignedAdmins: unknown[] } {
+  const { assignments, ...rest } = project;
+  return { ...rest, assignedAdmins: assignments.map((a) => a.admin) };
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export const projectsService = {
 
-  async listProjects() {
-    return prisma.project.findMany({
+  // Non-super-admins only see projects they're assigned to — this is what
+  // scopes the admin dashboard. Super admins always see everything.
+  async listProjects(admin: { adminId: string; role: AdminRole }) {
+    const projects = await prisma.project.findMany({
+      where:   admin.role === 'SUPER_ADMIN' ? undefined : { assignments: { some: { adminId: admin.adminId } } },
       orderBy: { createdAt: 'desc' },
       include: {
-        client: { select: { id: true, name: true, email: true, company: true } },
-        _count:  { select: { milestones: true, updates: true } },
+        client:      { select: { id: true, name: true, email: true, company: true } },
+        _count:      { select: { milestones: true, updates: true } },
+        assignments: { include: { admin: { select: adminSummarySelect } } },
       },
     });
+    return projects.map(withAssignedAdmins);
   },
 
   async createProject(data: z.infer<typeof createProjectSchema>) {
@@ -108,10 +129,11 @@ export const projectsService = {
         invoices:     { orderBy: { createdAt: 'desc' } },
         deliverables: { orderBy: { uploadedAt: 'desc' } },
         revisions:    { select: { id: true, name: true, status: true, createdAt: true } },
+        assignments:  { include: { admin: { select: adminSummarySelect } } },
       },
     });
     if (!project) throw new Error('Project not found');
-    return project;
+    return withAssignedAdmins(project);
   },
 
   async updateProject(id: string, data: z.infer<typeof updateProjectSchema>) {
@@ -269,5 +291,44 @@ export const projectsService = {
     const update = await prisma.projectUpdate.findFirst({ where: { id: updateId, projectId } });
     if (!update) throw new Error('Project update not found');
     await prisma.projectUpdate.delete({ where: { id: updateId } });
+  },
+
+  // ── Assignments ──────────────────────────────────────────────────────────────
+
+  async listAssignedAdmins(projectId: string) {
+    const assignments = await prisma.projectAssignment.findMany({
+      where:   { projectId },
+      include: { admin: { select: adminSummarySelect } },
+      orderBy: { createdAt: 'asc' },
+    });
+    return assignments.map((a) => a.admin);
+  },
+
+  async assignAdmin(projectId: string, adminId: string) {
+    const [project, admin] = await Promise.all([
+      prisma.project.findUnique({ where: { id: projectId } }),
+      prisma.admin.findUnique({ where: { id: adminId } }),
+    ]);
+    if (!project) throw new Error('Project not found');
+    if (!admin) throw new Error('Admin not found');
+
+    try {
+      await prisma.projectAssignment.create({ data: { projectId, adminId } });
+    } catch (err: any) {
+      if (err.code === 'P2002') throw new Error('Admin is already assigned to this project');
+      throw err;
+    }
+
+    return this.listAssignedAdmins(projectId);
+  },
+
+  async unassignAdmin(projectId: string, adminId: string) {
+    const assignment = await prisma.projectAssignment.findUnique({
+      where: { projectId_adminId: { projectId, adminId } },
+    });
+    if (!assignment) throw new Error('Admin is not assigned to this project');
+
+    await prisma.projectAssignment.delete({ where: { id: assignment.id } });
+    return this.listAssignedAdmins(projectId);
   },
 };

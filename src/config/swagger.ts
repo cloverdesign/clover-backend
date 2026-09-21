@@ -66,6 +66,7 @@ export const swaggerSpec: Schema = {
     { name: 'Projects',           description: 'Project management — admin only' },
     { name: 'Milestones',         description: 'Project milestones — admin only' },
     { name: 'Project Updates',    description: 'Internal project updates — admin only' },
+    { name: 'Project Assignments', description: 'Which admins are assigned to a project — scopes the admin dashboard and notifications feed' },
     { name: 'Invoices',           description: 'Invoice lifecycle with PDF generation — admin only' },
     { name: 'Deliverables',       description: 'Deliverable uploads and versioning — admin only' },
     { name: 'Revision Requests',  description: 'Client revision request queue — admin only' },
@@ -188,6 +189,11 @@ export const swaggerSpec: Schema = {
           endDate:         { type: 'string', format: 'date-time', nullable: true },
           archived:        { type: 'boolean' },
           notes:           { type: 'string', nullable: true },
+          assignedAdmins: {
+            type: 'array',
+            description: 'Admins assigned to this project — determines who sees it on GET /api/projects and gets notified about it. Empty unless explicitly assigned via POST /api/projects/{id}/assignments.',
+            items: { $ref: '#/components/schemas/Admin' },
+          },
           createdAt:       { type: 'string', format: 'date-time' },
           updatedAt:       { type: 'string', format: 'date-time' },
         },
@@ -996,7 +1002,8 @@ export const swaggerSpec: Schema = {
     '/api/projects': {
       get: {
         tags: ['Projects'],
-        summary: 'List all projects across all clients',
+        summary: 'List projects — scoped to the calling admin',
+        description: 'A SUPER_ADMIN sees every project. A regular ADMIN only sees projects they are assigned to (see the Project Assignments endpoints) — this is what powers the admin dashboard. An admin with no assignments sees an empty list.',
         security: [adminAuth],
         responses: {
           200: success({ type: 'array', items: { $ref: '#/components/schemas/Project' } }),
@@ -1045,7 +1052,8 @@ export const swaggerSpec: Schema = {
     '/api/projects/{id}': {
       get: {
         tags: ['Projects'],
-        summary: 'Get a project with milestones, updates, invoices, and deliverables',
+        summary: 'Get a project with milestones, updates, invoices, deliverables, and assigned admins',
+        description: 'Not scoped by assignment — any authenticated admin can look up a project directly by id, regardless of whether they appear in `assignedAdmins`. Only the list endpoint (`GET /api/projects`) is filtered.',
         security: [adminAuth],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
@@ -1243,6 +1251,49 @@ export const swaggerSpec: Schema = {
         responses: {
           200: success({ type: 'null' }),
           404: err('Update not found'),
+        },
+      },
+    },
+
+    // ── Project Assignments ──────────────────────────────────────────────────
+    '/api/projects/{id}/assignments': {
+      post: {
+        tags: ['Project Assignments'],
+        summary: 'Assign an admin to a project',
+        description: 'Once assigned, the project appears on that admin\'s `GET /api/projects` (dashboard) and they receive notifications about it. Has no effect on SUPER_ADMIN visibility — they see every project regardless of assignment.',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object', required: ['adminId'],
+                properties: { adminId: { type: 'string' } },
+              },
+            },
+          },
+        },
+        responses: {
+          201: success({ type: 'array', items: { $ref: '#/components/schemas/Admin' }, description: 'The project\'s full list of assigned admins after the change' }),
+          404: err('Project not found / Admin not found'),
+          409: err('Admin is already assigned to this project'),
+        },
+      },
+    },
+
+    '/api/projects/{id}/assignments/{adminId}': {
+      delete: {
+        tags: ['Project Assignments'],
+        summary: 'Unassign an admin from a project',
+        security: [adminAuth],
+        parameters: [
+          { name: 'id',      in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'adminId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: success({ type: 'array', items: { $ref: '#/components/schemas/Admin' }, description: 'The project\'s full list of assigned admins after the change' }),
+          404: err('Admin is not assigned to this project'),
         },
       },
     },
@@ -1595,7 +1646,7 @@ export const swaggerSpec: Schema = {
       get: {
         tags: ['Notifications'],
         summary: "List the calling admin's notifications, newest first",
-        description: 'Capped at the 50 most recent. `INVOICE_OVERDUE` and `MILESTONE_DUE` are derived lazily on each call from current invoice/milestone state (there is no background scheduler); `REVISION_REQUESTED` and `DELIVERABLE_REVIEW` are created at the moment those events happen, for every approved admin. Intended to be polled roughly every 60s. There is no separate unread-count endpoint — derive it client-side from `data.filter(n => !n.read).length`.',
+        description: 'Capped at the 50 most recent. Scoped like the dashboard (see `GET /api/projects`): a SUPER_ADMIN gets notified about every project, a regular ADMIN only about projects they\'re assigned to. `INVOICE_OVERDUE` and `MILESTONE_DUE` are derived lazily on each call from current invoice/milestone state (there is no background scheduler); `REVISION_REQUESTED` and `DELIVERABLE_REVIEW` are created at the moment those events happen, for every admin in scope for that project. Intended to be polled roughly every 60s. There is no separate unread-count endpoint — derive it client-side from `data.filter(n => !n.read).length`.',
         security: [adminAuth],
         responses: {
           200: success({ type: 'array', items: { $ref: '#/components/schemas/Notification' } }),

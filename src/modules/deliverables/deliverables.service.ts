@@ -96,7 +96,7 @@ export const deliverablesService = {
     );
 
     // Notify admins — deliverable is now awaiting client sign-off
-    await notificationsService.notifyApprovedAdmins({
+    await notificationsService.notifyForProject(projectId, {
       type:       'DELIVERABLE_REVIEW',
       title:      'Deliverable submitted',
       body:       `${project.name} · ${deliverable.title}`,

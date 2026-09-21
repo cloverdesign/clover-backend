@@ -49,4 +49,12 @@ router.delete('/:id/updates/:updateId', (req, res) =>
   projectsController.deleteUpdate(req, res)
 );
 
+// POST   /api/projects/:id/assignments
+router.post('/:id/assignments', (req, res) => projectsController.assignAdmin(req, res));
+
+// DELETE /api/projects/:id/assignments/:adminId
+router.delete('/:id/assignments/:adminId', (req, res) =>
+  projectsController.unassignAdmin(req, res)
+);
+
 export default router;

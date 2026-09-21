@@ -34,11 +34,21 @@ function formatCurrency(amount: number, currency: string): string {
 
 export const notificationsService = {
 
-  // Fan out a domain event to every approved admin's inbox. Idempotent via the
+  // Fan out a domain event to the admins who'd care: super admins (who see
+  // every project) plus whoever is assigned to this one. Idempotent via the
   // (adminId, sourceKey) unique constraint — safe to call more than once for
   // the same event.
-  async notifyApprovedAdmins(input: NotificationInput): Promise<void> {
-    const admins = await prisma.admin.findMany({ where: { approved: true }, select: { id: true } });
+  async notifyForProject(projectId: string, input: NotificationInput): Promise<void> {
+    const admins = await prisma.admin.findMany({
+      where: {
+        approved: true,
+        OR: [
+          { role: 'SUPER_ADMIN' },
+          { projectAssignments: { some: { projectId } } },
+        ],
+      },
+      select: { id: true },
+    });
     if (!admins.length) return;
 
     await prisma.notification.createMany({
@@ -49,17 +59,28 @@ export const notificationsService = {
 
   // Derive time-based notifications (overdue invoices, milestones coming due)
   // for one admin, lazily, on read — there is no background scheduler.
+  // Scoped to the admin's assigned projects; super admins see everything.
   async reconcile(adminId: string): Promise<void> {
+    const admin = await prisma.admin.findUnique({ where: { id: adminId }, select: { role: true } });
+    if (!admin) return;
+
+    let projectId: { in: string[] } | undefined;
+    if (admin.role !== 'SUPER_ADMIN') {
+      const assignments = await prisma.projectAssignment.findMany({ where: { adminId }, select: { projectId: true } });
+      if (!assignments.length) return; // not assigned to anything — nothing to reconcile
+      projectId = { in: assignments.map((a) => a.projectId) };
+    }
+
     const now  = new Date();
     const soon = new Date(now.getTime() + MILESTONE_DUE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
     const [overdueInvoices, dueMilestones] = await Promise.all([
       prisma.invoice.findMany({
-        where:   { status: { in: ['SENT', 'OVERDUE'] }, dueDate: { lt: now } },
+        where:   { status: { in: ['SENT', 'OVERDUE'] }, dueDate: { lt: now }, ...(projectId && { projectId }) },
         include: { project: { include: { client: true } } },
       }),
       prisma.milestone.findMany({
-        where:   { status: { not: 'COMPLETED' }, dueDate: { lte: soon, not: null } },
+        where:   { status: { not: 'COMPLETED' }, dueDate: { lte: soon, not: null }, ...(projectId && { projectId }) },
         include: { project: true },
       }),
     ]);
