@@ -122,33 +122,62 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<string> 
     y += 36;
 
     // ── Line items table ──────────────────────────────────────────────────────
+    const items: InvoiceLineItem[] = data.lineItems.length > 0
+      ? data.lineItems
+      : [{ description: data.description || data.projectName, quantity: 1, unitPrice: data.amount }];
+
+    // Everything below the table (divider, subtotal, divider, total, footer
+    // note) has a fixed height — reserve it up front so the table's row
+    // height can be sized to whatever room is actually left on the page.
+    // Guarantees the invoice always fits on a single page, however many
+    // line items it has.
+    const TABLE_HEADER_HEIGHT  = 28;
+    const DEFAULT_ROW_HEIGHT   = 26;
+    const MIN_ROW_HEIGHT       = 9; // floor for legibility — below this, shrinking further stops helping
+    const AFTER_TABLE_HEIGHT   = 20 + 20 + 12 + 48 + 34; // dividers/total rows + footer note
+
+    const availableForRows = (pageHeight - margin) - y - TABLE_HEADER_HEIGHT - AFTER_TABLE_HEIGHT;
+    const rowHeight = Math.max(MIN_ROW_HEIGHT, Math.min(DEFAULT_ROW_HEIGHT, availableForRows / items.length));
+    const rowFontSize =
+      rowHeight >= 22 ? 11 :
+      rowHeight >= 18 ? 10 :
+      rowHeight >= 15 ? 9  :
+      rowHeight >= 13 ? 8  : 6;
+
     // Table header
-    doc.rect(margin, y, contentW, 28).fill(C.veryLight);
+    doc.rect(margin, y, contentW, TABLE_HEADER_HEIGHT).fill(C.veryLight);
     doc.fontSize(10).fillColor(C.midGray).font('Helvetica');
     doc.text('Description',                  margin + 10,        y + 9);
     doc.text('Qty',     margin + contentW * 0.6, y + 9, { width: 50,  align: 'right' });
     doc.text('Unit price', margin + contentW * 0.7, y + 9, { width: 80, align: 'right' });
     doc.text('Amount',  margin + contentW * 0.85, y + 9, { width: contentW * 0.15 - 10, align: 'right' });
-    y += 28;
+    y += TABLE_HEADER_HEIGHT;
 
     // Table rows
-    const items: InvoiceLineItem[] = data.lineItems.length > 0
-      ? data.lineItems
-      : [{ description: data.description || data.projectName, quantity: 1, unitPrice: data.amount }];
-
     let subtotal = 0;
+    const textY = (rowY: number) => rowY + Math.max(2, (rowHeight - rowFontSize) / 2);
     items.forEach((item, i) => {
+      // Safety net only — fires when there are so many line items that even
+      // the floored row height can't fit them on one page. Rather than let
+      // PDFKit's own implicit pagination fire mid-row (which would desync
+      // the `y` this loop tracks and explode into dozens of pages), break
+      // cleanly onto a fresh page ourselves.
+      if (y + rowHeight > pageHeight - margin) {
+        doc.addPage();
+        y = margin;
+      }
+
       const rowTotal = item.quantity * item.unitPrice;
       subtotal += rowTotal;
 
-      if (i % 2 === 1) doc.rect(margin, y, contentW, 26).fill('#fafafa');
+      if (i % 2 === 1) doc.rect(margin, y, contentW, rowHeight).fill('#fafafa');
 
-      doc.fontSize(11).fillColor(C.darkGray).font('Helvetica');
-      doc.text(item.description,              margin + 10,           y + 7, { width: contentW * 0.55 });
-      doc.text(String(item.quantity),         margin + contentW * 0.6,  y + 7, { width: 50,  align: 'right' });
-      doc.text(formatCurrency(item.unitPrice, data.currency), margin + contentW * 0.7, y + 7, { width: 80, align: 'right' });
-      doc.text(formatCurrency(rowTotal, data.currency),       margin + contentW * 0.85, y + 7, { width: contentW * 0.15 - 10, align: 'right' });
-      y += 26;
+      doc.fontSize(rowFontSize).fillColor(C.darkGray).font('Helvetica');
+      doc.text(item.description, margin + 10, textY(y), { width: contentW * 0.55, height: rowHeight, ellipsis: true });
+      doc.text(String(item.quantity),         margin + contentW * 0.6,  textY(y), { width: 50,  align: 'right' });
+      doc.text(formatCurrency(item.unitPrice, data.currency), margin + contentW * 0.7, textY(y), { width: 80, align: 'right' });
+      doc.text(formatCurrency(rowTotal, data.currency),       margin + contentW * 0.85, textY(y), { width: contentW * 0.15 - 10, align: 'right' });
+      y += rowHeight;
     });
 
     // Bottom border of table
@@ -177,8 +206,14 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<string> 
       .text(`Thank you for your business. Please make payment by ${formatDate(data.dueDate)}.`, margin, y, { width: contentW });
 
     // ── Page footer ───────────────────────────────────────────────────────────
+    // Sits inside the page's bottom margin by design (a fixed footer near
+    // the physical edge). Zero out the bottom margin just for this draw so
+    // PDFKit doesn't treat it as an overflow and silently add a 2nd page.
+    const bottomMargin = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
     doc.fontSize(9).fillColor(C.lightGray)
       .text(env.MAIL_FROM_NAME, margin, pageHeight - 40, { width: contentW, align: 'center' });
+    doc.page.margins.bottom = bottomMargin;
 
     doc.end();
 
