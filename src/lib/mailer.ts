@@ -1,22 +1,39 @@
-import sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
 import fs from 'fs';
 import { env } from '../config/env';
 import { createLogger } from './logger';
 
 const log = createLogger('mailer');
 
-sgMail.setApiKey(env.SENDGRID_API_KEY);
+const resend = new Resend(env.RESEND_API_KEY);
 
-const FROM = { name: env.SENDGRID_FROM_NAME, email: env.SENDGRID_FROM_EMAIL };
+const FROM = `${env.MAIL_FROM_NAME} <${env.MAIL_FROM_EMAIL}>`;
+
+type Attachment = { content: string; filename: string };
+
+type Message = {
+  to: string;
+  subject: string;
+  html: string;
+  attachments?: Attachment[];
+};
 
 // ─── Send helper ──────────────────────────────────────────────────────────────
 
-async function send(msg: sgMail.MailDataRequired): Promise<void> {
+async function send(msg: Message): Promise<void> {
   try {
-    await sgMail.send(msg);
-    log.info('Email sent', { to: msg.to, subject: msg.subject });
+    const { error } = await resend.emails.send({
+      from:        FROM,
+      to:          msg.to,
+      subject:     msg.subject,
+      html:        msg.html,
+      attachments: msg.attachments,
+    });
+    if (error) throw new Error(error.message);
+    log.info('Email sent', { to: msg.to });
   } catch (err: any) {
-    log.error('Failed to send email', { to: msg.to, subject: msg.subject, error: err.message });
+    // Subject lines can carry sensitive content (e.g. OTP codes) — never log them.
+    log.error('Failed to send email', { to: msg.to, error: err.message });
     throw err;
   }
 }
@@ -125,7 +142,7 @@ function layout(body: string): string {
           <tr>
             <td class="hd-cell" style="background:#0f0f0f;padding:22px 36px;">
               <span style="font-size:17px;font-weight:700;color:#ffffff;letter-spacing:-0.2px;${FONT}">
-                ${env.SENDGRID_FROM_NAME}<span style="display:inline-block;width:6px;height:6px;background:#2E7D52;border-radius:50%;margin-left:4px;vertical-align:middle;position:relative;top:-1px;"></span>
+                ${env.MAIL_FROM_NAME}<span style="display:inline-block;width:6px;height:6px;background:#2E7D52;border-radius:50%;margin-left:4px;vertical-align:middle;position:relative;top:-1px;"></span>
               </span>
             </td>
           </tr>
@@ -141,7 +158,7 @@ function layout(body: string): string {
           <tr>
             <td class="ft-cell" style="padding:20px 36px;border-top:1px solid #eeeeee;">
               <p style="margin:0;font-size:12px;color:#c4c4c4;line-height:1.6;${FONT}">
-                This email was sent by ${env.SENDGRID_FROM_NAME}. Please do not reply directly to this message.
+                This email was sent by ${env.MAIL_FROM_NAME}. Please do not reply directly to this message.
               </p>
             </td>
           </tr>
@@ -162,11 +179,11 @@ export const mailer = {
 
   async sendAdminVerificationEmail(email: string, name: string, verificationUrl: string): Promise<void> {
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: 'Verify your admin account',
       html: layout(
         t.h('Verify your email') +
-        t.p(`Hi ${name}, welcome to the ${env.SENDGRID_FROM_NAME} admin panel. Click the button below to verify your email address and activate your account.`) +
+        t.p(`Hi ${name}, welcome to the ${env.MAIL_FROM_NAME} admin panel. Click the button below to verify your email address and activate your account.`) +
         t.btn('Verify email address', verificationUrl) +
         t.rule() +
         t.note('This link expires in 24 hours. If you did not create an admin account, you can safely ignore this email.')
@@ -178,7 +195,7 @@ export const mailer = {
 
   async sendAdminApprovalRequest(newAdminName: string, newAdminEmail: string, approvalUrl: string): Promise<void> {
     await send({
-      to: env.ADMIN_EMAIL, from: FROM,
+      to: env.ADMIN_EMAIL,
       subject: `New admin account awaiting approval — ${newAdminName}`,
       html: layout(
         t.h('New admin account') +
@@ -194,7 +211,7 @@ export const mailer = {
 
   async sendAdminAccountApproved(email: string, name: string): Promise<void> {
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: 'Your admin account has been approved',
       html: layout(
         t.h('Account approved') +
@@ -210,7 +227,7 @@ export const mailer = {
 
   async sendAdminLoginOtp(email: string, name: string, code: string): Promise<void> {
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: `${code} is your sign-in code`,
       html: layout(
         t.h('Admin sign-in') +
@@ -225,7 +242,7 @@ export const mailer = {
 
   async sendOtp(email: string, clientName: string, code: string): Promise<void> {
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: `${code} is your sign-in code`,
       html: layout(
         t.h('Your sign-in code') +
@@ -240,8 +257,8 @@ export const mailer = {
 
   async sendPortalInvite(email: string, clientName: string, portalUrl: string): Promise<void> {
     await send({
-      to: email, from: FROM,
-      subject: `You have been invited to the ${env.SENDGRID_FROM_NAME} client portal`,
+      to: email,
+      subject: `You have been invited to the ${env.MAIL_FROM_NAME} client portal`,
       html: layout(
         t.h('Welcome to your portal') +
         t.p(`Hi ${clientName}, your client portal is ready. You can track your project progress, view deliverables, review invoices, and stay up to date — all in one place.`) +
@@ -256,7 +273,7 @@ export const mailer = {
 
   async sendProjectWelcome(email: string, clientName: string, projectName: string, portalUrl: string): Promise<void> {
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: `Your project is live — ${projectName}`,
       html: layout(
         t.h('Your project is set up') +
@@ -291,7 +308,7 @@ export const mailer = {
       : 'neutral';
 
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: `Project update — ${projectName} is now ${label}`,
       html: layout(
         t.h('Project status update') +
@@ -312,7 +329,7 @@ export const mailer = {
     portalUrl: string,
   ): Promise<void> {
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: `Milestone completed — ${milestoneName}`,
       html: layout(
         t.h('Milestone reached') +
@@ -333,7 +350,7 @@ export const mailer = {
     portalUrl: string,
   ): Promise<void> {
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: `New update on ${projectName}`,
       html: layout(
         t.h('New project update') +
@@ -359,12 +376,12 @@ export const mailer = {
     const formattedAmount = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
     const formattedDue   = dueDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
-    const attachments: sgMail.MailDataRequired['attachments'] = pdfFilePath && fs.existsSync(pdfFilePath)
-      ? [{ content: fs.readFileSync(pdfFilePath).toString('base64'), filename: `Invoice-${invoiceNumber}.pdf`, type: 'application/pdf', disposition: 'attachment' }]
+    const attachments: Attachment[] = pdfFilePath && fs.existsSync(pdfFilePath)
+      ? [{ content: fs.readFileSync(pdfFilePath).toString('base64'), filename: `Invoice-${invoiceNumber}.pdf` }]
       : [];
 
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: `Invoice ${invoiceNumber} — ${formattedAmount} due ${formattedDue}`,
       html: layout(
         t.h(`Invoice ${invoiceNumber}`) +
@@ -392,7 +409,7 @@ export const mailer = {
     portalUrl: string,
   ): Promise<void> {
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: `Deliverable ready for review — ${deliverableTitle}`,
       html: layout(
         t.h('New deliverable ready') +
@@ -416,7 +433,7 @@ export const mailer = {
   ): Promise<void> {
     const approved = reviewStatus === 'APPROVED';
     await send({
-      to: env.ADMIN_EMAIL, from: FROM,
+      to: env.ADMIN_EMAIL,
       subject: approved ? `Deliverable approved — ${deliverableTitle}` : `Changes requested — ${deliverableTitle}`,
       html: layout(
         t.h(approved ? 'Deliverable approved' : 'Changes requested') +
@@ -436,7 +453,7 @@ export const mailer = {
     description: string,
   ): Promise<void> {
     await send({
-      to: env.ADMIN_EMAIL, from: FROM,
+      to: env.ADMIN_EMAIL,
       subject: `Revision request from ${clientName} — ${projectName}`,
       html: layout(
         t.h('New revision request') +
@@ -483,7 +500,7 @@ export const mailer = {
     const { label, variant, body } = config[status];
 
     await send({
-      to: email, from: FROM,
+      to: email,
       subject: `Revision request update — ${projectName}`,
       html: layout(
         t.h('Revision request update') +

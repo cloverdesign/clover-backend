@@ -10,7 +10,10 @@ const stream: StreamOptions = {
 // Custom token: request body (sanitised — passwords are redacted)
 morgan.token('body', (req: Request) => {
   const body = { ...(req.body as Record<string, unknown>) };
-  const sensitiveKeys = ['password', 'currentPassword', 'newPassword', 'confirmPassword'];
+  const sensitiveKeys = [
+    'password', 'currentPassword', 'newPassword', 'confirmPassword',
+    'otp', 'code', 'token',
+  ];
   sensitiveKeys.forEach((key) => {
     if (key in body) body[key] = '[REDACTED]';
   });

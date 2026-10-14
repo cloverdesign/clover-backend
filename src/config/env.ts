@@ -24,10 +24,10 @@ export const env = {
   // Admin JWT
   JWT_SECRET: requireEnv('JWT_SECRET'),
 
-  // SendGrid
-  SENDGRID_API_KEY:   requireEnv('SENDGRID_API_KEY'),
-  SENDGRID_FROM_EMAIL: requireEnv('SENDGRID_FROM_EMAIL'),
-  SENDGRID_FROM_NAME:  process.env.SENDGRID_FROM_NAME || 'Clover Agency',
+  // Resend
+  RESEND_API_KEY: requireEnv('RESEND_API_KEY'),
+  MAIL_FROM_EMAIL: requireEnv('MAIL_FROM_EMAIL'),
+  MAIL_FROM_NAME:  process.env.MAIL_FROM_NAME || 'Clover Agency',
 
   // Admin contact — recipient for admin-facing notifications
   ADMIN_EMAIL: requireEnv('ADMIN_EMAIL'),
