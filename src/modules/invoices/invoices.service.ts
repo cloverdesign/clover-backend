@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import path from 'path';
+import fs from 'fs';
 import prisma from '../../lib/prisma';
 import { env } from '../../config/env';
 import { mailer } from '../../lib/mailer';
-import { generateInvoicePdf, InvoiceLineItem } from '../../lib/pdfGenerator';
+import { generateInvoicePdf, resolveInvoicePdfPath, InvoiceLineItem } from '../../lib/pdfGenerator';
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -150,13 +150,7 @@ export const invoicesService = {
     });
 
     // Email client with PDF attachment.
-    // On Lambda, PDFs are written to /tmp (writable), not process.cwd() (read-only).
-    const isReadOnlyFs =
-      process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined ||
-      process.cwd().startsWith('/var/task');
-    const pdfPath = isReadOnlyFs
-      ? `/tmp${pdfUrl}`
-      : path.join(process.cwd(), pdfUrl);
+    const pdfPath = resolveInvoicePdfPath(pdfUrl);
     await mailer.sendInvoiceNotification(
       client.email,
       client.name,
@@ -191,5 +185,42 @@ export const invoicesService = {
       where: { id },
       data:  { status: 'OVERDUE' },
     });
+  },
+
+  // ── PDF ───────────────────────────────────────────────────────────────────────
+
+  // Resolves the on-disk path to this invoice's PDF, generating it on the fly
+  // from current invoice data if it hasn't been generated yet (e.g. a DRAFT
+  // invoice that hasn't been sent) or the previously generated file is missing.
+  // Does not touch the invoice's status or stored pdfUrl — only `send()` does.
+  async getPdfPath(id: string): Promise<{ filePath: string; invoiceNumber: string }> {
+    const invoice = await prisma.invoice.findUnique({
+      where:   { id },
+      include: { project: { include: { client: true } } },
+    });
+    if (!invoice) throw new Error('Invoice not found');
+
+    const existingPath = invoice.pdfUrl ? resolveInvoicePdfPath(invoice.pdfUrl) : null;
+    if (existingPath && fs.existsSync(existingPath)) {
+      return { filePath: existingPath, invoiceNumber: invoice.invoiceNumber };
+    }
+
+    const { project } = invoice;
+    const { client }  = project;
+    const pdfUrl = await generateInvoicePdf({
+      invoiceNumber: invoice.invoiceNumber,
+      issuedDate:    invoice.issuedDate,
+      dueDate:       invoice.dueDate,
+      clientName:    client.name,
+      clientEmail:   client.email,
+      clientCompany: client.company,
+      projectName:   project.name,
+      amount:        invoice.amount,
+      currency:      invoice.currency,
+      description:   invoice.description,
+      lineItems:     (invoice.lineItems as unknown as InvoiceLineItem[]) ?? [],
+    });
+
+    return { filePath: resolveInvoicePdfPath(pdfUrl), invoiceNumber: invoice.invoiceNumber };
   },
 };

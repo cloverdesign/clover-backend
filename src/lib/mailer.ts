@@ -511,4 +511,20 @@ export const mailer = {
       ),
     });
   },
+
+  // ── Admin: Database health check failed ─────────────────────────────────────
+
+  async sendDbHealthCheckFailed(error: string): Promise<void> {
+    await send({
+      to: env.ADMIN_EMAIL,
+      subject: 'Database health check failed',
+      html: layout(
+        t.h('Database health check failed') +
+        t.tag('Unhealthy', 'decline') +
+        t.p('The scheduled morning database health check could not reach the database.') +
+        t.quote(error) +
+        t.note('This is an automated alert. If this persists, check the database provider status and connection settings.')
+      ),
+    });
+  },
 };

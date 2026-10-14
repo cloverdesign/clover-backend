@@ -1447,6 +1447,34 @@ export const swaggerSpec: Schema = {
       },
     },
 
+    '/api/invoices/{id}/pdf/preview': {
+      get: {
+        tags: ['Invoices'],
+        summary: 'Preview the invoice PDF inline',
+        description: 'Returns the PDF with `Content-Disposition: inline` so it renders directly in the browser instead of downloading. If the invoice has not been sent yet (no PDF generated so far, e.g. still DRAFT), the PDF is generated on the fly from the invoice\'s current data — this does not mark the invoice as sent or persist a `pdfUrl`. If a PDF already exists (the invoice was sent), that file is reused as-is.',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: { description: 'The invoice PDF', content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } } },
+          404: err('Invoice not found'),
+        },
+      },
+    },
+
+    '/api/invoices/{id}/pdf/download': {
+      get: {
+        tags: ['Invoices'],
+        summary: 'Download the invoice PDF',
+        description: 'Same PDF resolution as the preview endpoint, but returned with `Content-Disposition: attachment` to trigger a download as `Invoice-{invoiceNumber}.pdf`.',
+        security: [adminAuth],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: { description: 'The invoice PDF', content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } } },
+          404: err('Invoice not found'),
+        },
+      },
+    },
+
     // ── Deliverables (nested) ────────────────────────────────────────────────
     '/api/projects/{id}/deliverables': {
       get: {

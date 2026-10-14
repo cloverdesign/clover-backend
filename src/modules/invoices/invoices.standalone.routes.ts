@@ -13,5 +13,7 @@ router.delete('/:id',            (req, res) => invoicesController.delete(req, re
 router.post('/:id/send',         (req, res) => invoicesController.send(req, res));
 router.post('/:id/mark-paid',    (req, res) => invoicesController.markPaid(req, res));
 router.post('/:id/mark-overdue', (req, res) => invoicesController.markOverdue(req, res));
+router.get('/:id/pdf/preview',   (req, res) => invoicesController.previewPdf(req, res));
+router.get('/:id/pdf/download',  (req, res) => invoicesController.downloadPdf(req, res));
 
 export default router;

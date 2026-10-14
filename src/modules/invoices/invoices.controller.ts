@@ -101,4 +101,23 @@ export const invoicesController = {
       sendError(res, err.message, notFound(err.message) ? 404 : conflict(err.message) ? 409 : 500);
     }
   },
+
+  async previewPdf(req: Request, res: Response): Promise<void> {
+    try {
+      const { filePath, invoiceNumber } = await invoicesService.getPdfPath(param(req.params.id));
+      res.setHeader('Content-Disposition', `inline; filename="Invoice-${invoiceNumber}.pdf"`);
+      res.sendFile(filePath);
+    } catch (err: any) {
+      sendError(res, err.message, notFound(err.message) ? 404 : 500);
+    }
+  },
+
+  async downloadPdf(req: Request, res: Response): Promise<void> {
+    try {
+      const { filePath, invoiceNumber } = await invoicesService.getPdfPath(param(req.params.id));
+      res.download(filePath, `Invoice-${invoiceNumber}.pdf`);
+    } catch (err: any) {
+      sendError(res, err.message, notFound(err.message) ? 404 : 500);
+    }
+  },
 };

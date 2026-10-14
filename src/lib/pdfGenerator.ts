@@ -33,6 +33,12 @@ const INVOICES_DIR = isReadOnlyFs
   ? '/tmp/uploads/invoices'
   : path.join(process.cwd(), 'uploads', 'invoices');
 
+// Maps a stored public URL (e.g. `/uploads/invoices/invoice-INV-0001.pdf`) back
+// to its actual location on disk — accounting for the read-only-fs fallback above.
+export function resolveInvoicePdfPath(publicUrl: string): string {
+  return path.join(INVOICES_DIR, path.basename(publicUrl));
+}
+
 const formatCurrency = (amount: number, currency: string) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
 

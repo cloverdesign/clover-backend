@@ -8,6 +8,7 @@ import { swaggerSpec } from './config/swagger';
 import logger from './lib/logger';
 import { httpLogger } from './middleware/httpLogger';
 import { errorHandler, notFound } from './middleware/errorHandler';
+import { scheduleDbHealthCheck } from './jobs/dbHealthCheck';
 
 // ── Core modules ──────────────────────────────────────────────────────────────
 import authRoutes    from './modules/auth/auth.routes';
@@ -165,6 +166,7 @@ app.listen(env.PORT, () => {
     environment: env.NODE_ENV,
     port:        env.PORT,
   });
+  scheduleDbHealthCheck();
 });
 
 process.on('unhandledRejection', (reason: unknown) => {
