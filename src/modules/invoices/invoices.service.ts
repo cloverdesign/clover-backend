@@ -24,11 +24,22 @@ export const updateInvoiceSchema = createInvoiceSchema.partial();
 
 // ─── Auto invoice number ───────────────────────────────────────────────────────
 
+// Max-based, not count-based — a count collides with an existing number as
+// soon as any invoice has ever been deleted (count drops but numbers already
+// issued don't get freed up).
 async function nextInvoiceNumber(): Promise<string> {
-  const count = await prisma.invoice.count();
-  const num   = String(count + 1).padStart(4, '0');
-  return `INV-${num}`;
+  const invoices = await prisma.invoice.findMany({
+    where:  { invoiceNumber: { startsWith: 'INV-' } },
+    select: { invoiceNumber: true },
+  });
+  const maxNum = invoices.reduce((max, { invoiceNumber }) => {
+    const n = parseInt(invoiceNumber.slice(4), 10);
+    return Number.isNaN(n) ? max : Math.max(max, n);
+  }, 0);
+  return `INV-${String(maxNum + 1).padStart(4, '0')}`;
 }
+
+const MAX_INVOICE_NUMBER_ATTEMPTS = 5;
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
@@ -69,21 +80,32 @@ export const invoicesService = {
     });
     if (!project) throw new Error('Project not found');
 
-    const invoiceNumber = await nextInvoiceNumber();
-    const currency      = data.currency ?? project.currency;
+    const currency = data.currency ?? project.currency;
 
-    return prisma.invoice.create({
-      data: {
-        projectId,
-        invoiceNumber,
-        amount:      data.amount,
-        currency,
-        description: data.description,
-        lineItems:   data.lineItems ?? [],
-        dueDate:     new Date(data.dueDate),
-        issuedDate:  data.issuedDate ? new Date(data.issuedDate) : new Date(),
-      },
-    });
+    // Two concurrent requests can compute the same "next" number before
+    // either commits — retry with a freshly recomputed number rather than
+    // surfacing the unique-constraint error to the caller.
+    for (let attempt = 1; attempt <= MAX_INVOICE_NUMBER_ATTEMPTS; attempt++) {
+      const invoiceNumber = await nextInvoiceNumber();
+      try {
+        return await prisma.invoice.create({
+          data: {
+            projectId,
+            invoiceNumber,
+            amount:      data.amount,
+            currency,
+            description: data.description,
+            lineItems:   data.lineItems ?? [],
+            dueDate:     new Date(data.dueDate),
+            issuedDate:  data.issuedDate ? new Date(data.issuedDate) : new Date(),
+          },
+        });
+      } catch (err: any) {
+        if (err.code === 'P2002' && attempt < MAX_INVOICE_NUMBER_ATTEMPTS) continue;
+        throw err;
+      }
+    }
+    throw new Error('Failed to generate a unique invoice number');
   },
 
   async getById(id: string) {
